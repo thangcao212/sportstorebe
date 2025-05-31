@@ -1,17 +1,18 @@
 package com.sprotshop.sportstore.controller;
 
+import com.sprotshop.sportstore.entity.User;
 import com.sprotshop.sportstore.request.LoginRequest;
 import com.sprotshop.sportstore.request.RegisterRequest;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.AuthResponse;
+import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * Controller for authentication-related endpoints
@@ -44,5 +45,9 @@ public class AuthController {
         ApiResponse<AuthResponse> response = userService.login(loginRequest);
         return ResponseEntity.status(response.getStatus()).body(response);
     }
+
+
+
+
 
 }

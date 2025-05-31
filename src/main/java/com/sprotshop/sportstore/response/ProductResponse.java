@@ -1,7 +1,7 @@
 package com.sprotshop.sportstore.response;
 
-import com.sprotshop.sportstore.entity.Image;
 import com.sprotshop.sportstore.entity.Product;
+import com.sprotshop.sportstore.entity.ProductSize; // Import ProductSize
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,11 +21,12 @@ public class ProductResponse {
     private String name;
     private String description;
     private Double price;
-    private Integer stockQuantity;
+    private Integer stockQuantity; // Total stock quantity
     private List<ImageInfo> images;
     private Long categoryId;
     private String categoryName;
     private String categoryDescription;
+    private List<ProductSizeInfo> sizes; // Added sizes info
 
     @Data
     @Builder
@@ -38,8 +39,19 @@ public class ProductResponse {
         private String name;
     }
 
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ProductSizeInfo { // New inner class for size response
+        private Long id;
+        private String size;
+        private Integer stockQuantity;
+    }
+
     public static ProductResponse fromEntity(Product product) {
         if (product == null) return null;
+
         List<ImageInfo> imageInfos = Collections.emptyList();
         if (product.getImages() != null && Hibernate.isInitialized(product.getImages())) {
             if (!product.getImages().isEmpty()) {
@@ -48,18 +60,41 @@ public class ProductResponse {
                         .build()).collect(Collectors.toList());
             }
         }
+
         Long catId = null; String catName = null; String catDesc = null;
         if (product.getProductCategory() != null && Hibernate.isInitialized(product.getProductCategory())) {
             catId = product.getProductCategory().getId();
             catName = product.getProductCategory().getName();
             catDesc = product.getProductCategory().getDescription();
         }
+
+        List<ProductSizeInfo> sizeInfos = Collections.emptyList();
+        if (product.getProductSizes() != null && Hibernate.isInitialized(product.getProductSizes())) {
+            if (!product.getProductSizes().isEmpty()) {
+                sizeInfos = product.getProductSizes().stream()
+                        .map(ps -> ProductSizeInfo.builder()
+                                .id(ps.getId())
+                                .size(ps.getSize())
+                                .stockQuantity(ps.getStockQuantity())
+                                .build())
+                        .collect(Collectors.toList());
+            }
+        }
+
         return ProductResponse.builder()
-                .id(product.getId()).name(product.getName()).description(product.getDescription())
-                .price(product.getPrice()).stockQuantity(product.getStockQuantity()).images(imageInfos)
-                .categoryId(catId).categoryName(catName).categoryDescription(catDesc)
+                .id(product.getId())
+                .name(product.getName())
+                .description(product.getDescription())
+                .price(product.getPrice())
+                .stockQuantity(product.getStockQuantity()) // This is the total stock
+                .images(imageInfos)
+                .categoryId(catId)
+                .categoryName(catName)
+                .categoryDescription(catDesc)
+                .sizes(sizeInfos) // Add sizes to response
                 .build();
     }
+
     public static List<ProductResponse> fromEntities(List<Product> products) {
         if (products == null || products.isEmpty()) return Collections.emptyList();
         return products.stream().map(ProductResponse::fromEntity).collect(Collectors.toList());

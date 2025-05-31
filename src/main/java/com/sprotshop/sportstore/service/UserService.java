@@ -5,6 +5,8 @@ import com.sprotshop.sportstore.request.LoginRequest;
 import com.sprotshop.sportstore.request.RegisterRequest;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.AuthResponse;
+import com.sprotshop.sportstore.response.PageResponse;
+import org.springframework.data.domain.Pageable;
 
 public interface UserService {
     /**
@@ -21,4 +23,8 @@ public interface UserService {
      */
     ApiResponse<AuthResponse> login(LoginRequest loginRequest);
     User getCurrentLoggedInUser();
+    PageResponse<User> getAllUsers(Pageable pageable);
+
+    void deleteUser(Long id);
+
 }

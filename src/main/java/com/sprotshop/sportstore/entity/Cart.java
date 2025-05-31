@@ -44,6 +44,8 @@ public class Cart {
      @Temporal(TemporalType.TIMESTAMP)
      private Date updatedAt;
 
+
+
     // --- Helper Methods ---
     public void addCartItem(CartItem item) {
         if (item != null) {

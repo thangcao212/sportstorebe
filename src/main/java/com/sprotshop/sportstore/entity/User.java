@@ -1,6 +1,7 @@
 package com.sprotshop.sportstore.entity;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sprotshop.sportstore.Enum.UserRole;
 import jakarta.persistence.*;
 import com.sprotshop.sportstore.entity.Cart;
@@ -24,6 +25,7 @@ public class User {
     private String username;
     private String email;
     private String password;
+    private String phone;
 
     @Enumerated(EnumType.STRING)
     private UserRole role;
@@ -31,6 +33,7 @@ public class User {
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
     private List<Address> addresses;
 
+    @JsonIgnore
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
     private Cart cart;
 }

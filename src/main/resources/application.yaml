@@ -3,15 +3,18 @@ server:
 
 spring:
   datasource:
-    url: "jdbc:mysql://localhost:3306/sprortstore"
+    url: "jdbc:mysql://localhost:3306/sportstore"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
     username: root
-    password: root
+    password:
 
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
 
   servlet:
     multipart:
@@ -19,6 +22,16 @@ spring:
       max-file-size: 10MB
       max-request-size: 20MB
 
+  cache:
+    type: redis
+    redis:
+      time-to-live: 86400000 # 24 hours
+      cache-null-values: false
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
 
 jwt:
   secret-key: thanggdev123456789thanggdev123456789
