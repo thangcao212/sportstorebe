@@ -1,6 +1,7 @@
 package com.sprotshop.sportstore.controller;
 
 import com.sprotshop.sportstore.request.ProductRequest; // Dùng ProductRequest đã cập nhật
+import com.sprotshop.sportstore.request.ProductSearchRequest;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.response.ProductResponse;
@@ -72,7 +73,6 @@ public class ProductController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_CUSTOMER')")
     public ResponseEntity<ApiResponse<ProductResponse>> getProductById(@PathVariable Long id) {
         log.info("GET /api/products/{}", id);
         ProductResponse product = productService.getProductById(id);
@@ -85,7 +85,6 @@ public class ProductController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_CUSTOMER')")
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getAllProducts() {
         log.info("GET /api/products");
         List<ProductResponse> products = productService.getAllProducts();
@@ -100,7 +99,6 @@ public class ProductController {
 
 
     @GetMapping("/category/{categoryId}") // Endpoint này đúng
-    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_CUSTOMER')")
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getProductsByCategory(
             @PathVariable Long categoryId) {
         log.info("GET /api/products/category/{}", categoryId);
@@ -114,7 +112,6 @@ public class ProductController {
     }
 
     @GetMapping("/page")
-    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_CUSTOMER')")
     public ResponseEntity<ApiResponse<PageResponse<ProductResponse>>> getProductsPage(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
@@ -146,17 +143,56 @@ public class ProductController {
         return ResponseEntity.ok(apiResponse);
     }
 
+//    @GetMapping("/search")
+//    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_CUSTOMER')")
+//    public ResponseEntity<ApiResponse<List<ProductResponse>>> searchProductsByName(
+//            @RequestParam String name) {
+//        log.info("GET /api/products/search?name={}", name);
+//        List<ProductResponse> products = productService.searchProductsByName(name);
+//        ApiResponse<List<ProductResponse>> response = ApiResponse.<List<ProductResponse>>builder()
+//                .message("Search results for '" + name + "'")
+//                .data(products)
+//                .status(HttpStatus.OK.value())
+//                .build();
+//        return ResponseEntity.ok(response);
+//    }
+
     @GetMapping("/search")
-    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_CUSTOMER')")
-    public ResponseEntity<ApiResponse<List<ProductResponse>>> searchProductsByName(
-            @RequestParam String name) {
-        log.info("GET /api/products/search?name={}", name);
-        List<ProductResponse> products = productService.searchProductsByName(name);
-        ApiResponse<List<ProductResponse>> response = ApiResponse.<List<ProductResponse>>builder()
-                .message("Search results for '" + name + "'")
-                .data(products)
+    public ResponseEntity<ApiResponse<PageResponse<ProductResponse>>> searchProducts(
+            @RequestParam(required = false) String searchValue,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Double minPrice,
+            @RequestParam(required = false) Double maxPrice,
+            @RequestParam(required = false) Integer minStock,
+            @RequestParam(required = false) Integer maxStock,
+            Pageable pageable) {
+        log.debug("Received request to search products with criteria: searchValue={}, categoryId={}, minPrice={}, maxPrice={}, minStock={}, maxStock={}, pageable={}",
+                searchValue, categoryId, minPrice, maxPrice, minStock, maxStock, pageable);
+
+        ProductSearchRequest searchRequest = ProductSearchRequest.builder()
+                .searchValue(searchValue)
+                .categoryId(categoryId)
+                .minPrice(minPrice)
+                .maxPrice(maxPrice)
+                .minStock(minStock)
+                .maxStock(maxStock)
+                .build();
+
+        Page<ProductResponse> page = productService.searchProducts(searchRequest, pageable);
+        PageResponse<ProductResponse> pageResponse = PageResponse.<ProductResponse>builder()
+                .currentPage(page.getNumber())
+                .totalPages(page.getTotalPages())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .data(page.getContent())
+                .build();
+        ApiResponse<PageResponse<ProductResponse>> apiResponse = ApiResponse.<PageResponse<ProductResponse>>builder()
+                .message("Products searched successfully")
+                .data(pageResponse)
                 .status(HttpStatus.OK.value())
                 .build();
-        return ResponseEntity.ok(response);
+        log.info("Found {} products on page {} of size {} matching search criteria",
+                page.getTotalElements(), page.getNumber(), page.getSize());
+        return ResponseEntity.ok(apiResponse);
     }
 }

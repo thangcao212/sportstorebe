@@ -15,23 +15,5 @@ import java.util.List;
 @Repository
 public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
     
-    /**
-     * Find all order items for a specific order
-     * @param order the order to find items for
-     * @return list of order items for the order
-     */
-    List<OrderItem> findByOrder(Order order);
-    
-    /**
-     * Find all order items for a specific product
-     * @param product the product to find order items for
-     * @return list of order items for the product
-     */
-    List<OrderItem> findByProduct(Product product);
-    
-    /**
-     * Delete all order items for a specific order
-     * @param order the order to delete items for
-     */
-    void deleteByOrder(Order order);
+
 }

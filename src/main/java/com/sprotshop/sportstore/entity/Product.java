@@ -5,9 +5,7 @@ import lombok.*;
 import org.hibernate.annotations.Fetch;
 import org.hibernate.annotations.FetchMode;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 @Entity
 @Table(name = "product")
@@ -36,24 +34,64 @@ public class Product {
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     //@Fetch(FetchMode.SUBSELECT)
-    private List<Image> images = new ArrayList<>();
+    private Set<Image> images = new HashSet<>();
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id")
     private ProductCategory productCategory;
 
+
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    private Set<ProductSize> productSizes = new HashSet<>();
+
+//    public void addImage(Image image) {
+//        if (image != null) {
+//            if (this.images == null) this.images = new ArrayList<>();
+//            if (!this.images.contains(image)) this.images.add(image);
+//            image.setProduct(this);
+//        }
+//    }
+
+//    public void removeImage(Image image) {
+//        if (image != null && this.images != null) {
+//            this.images.remove(image);
+//            image.setProduct(null);
+//        }
+//    }
+
     public void addImage(Image image) {
         if (image != null) {
-            if (this.images == null) this.images = new ArrayList<>();
-            if (!this.images.contains(image)) this.images.add(image);
-            image.setProduct(this);
+            if (this.images == null) this.images = new HashSet<>();
+            if (this.images.add(image)) { // Set.add() trả về boolean
+                image.setProduct(this);
+            }
         }
     }
 
     public void removeImage(Image image) {
         if (image != null && this.images != null) {
-            this.images.remove(image);
-            image.setProduct(null);
+            if (this.images.remove(image)) { // Set.remove() trả về boolean
+                image.setProduct(null);
+            }
+        }
+    }
+
+    public void addProductSize(ProductSize productSize) {
+        if (productSize != null) {
+            if (this.productSizes == null) this.productSizes = new HashSet<>();
+            // Ensure productSize is not already associated or handle as needed
+            if (!this.productSizes.contains(productSize)) { // Simple check, might need equals/hashCode on ProductSize for this
+                this.productSizes.add(productSize);
+                productSize.setProduct(this);
+            }
+        }
+    }
+
+    public void removeProductSize(ProductSize productSize) {
+        if (productSize != null && this.productSizes != null) {
+            this.productSizes.remove(productSize);
+            productSize.setProduct(null);
         }
     }
 
@@ -74,4 +112,6 @@ public class Product {
     public String toString() {
         return "Product{id=" + id + ", name='" + name + '\'' + ", price=" + price + ", stockQuantity=" + stockQuantity + "}";
     }
+
+
 }

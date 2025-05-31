@@ -15,6 +15,7 @@ public class CartItemResponse {
     private String productName;
     private String productImageUrl; // Lấy ảnh đầu tiên làm đại diện (ví dụ)
     private Integer quantity;
+    private String size;
     private Double price; // Giá đơn vị hiện tại của sản phẩm
     private Double itemTotalPrice; // Thành tiền (quantity * price)
 }

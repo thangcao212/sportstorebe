@@ -1,6 +1,5 @@
 package com.sprotshop.sportstore.security;
 
-
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,9 +22,7 @@ import java.io.IOException;
 public class AuthFilter extends OncePerRequestFilter {
 
     private final JwtUtils jwtUtils;
-
     private final CustomUserDetailService customUserDetailService;
-
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -35,13 +32,19 @@ public class AuthFilter extends OncePerRequestFilter {
 
         if (token != null) {
             String email = jwtUtils.getUsernameFromToken(token);
-            String role = jwtUtils.getRoleFromToken(token);  // 🛠 Lấy role từ token
-            log.info("User: {}, Role: {}", email, role); // 🛠 In ra log để kiểm tra
+            String role = jwtUtils.getRoleFromToken(token);
+
+            // 👉 Chỉ log nếu đang ở chế độ debug
+            if (log.isDebugEnabled()) {
+                log.debug("User: {}, Role: {}", email, role);
+            }
 
             UserDetails userDetails = customUserDetailService.loadUserByUsername(email);
 
             if (StringUtils.hasText(email) && jwtUtils.isTokeValid(token, userDetails)) {
-                log.info("Valid Token, {}, Role: {}", email, role);
+                if (log.isDebugEnabled()) {
+                    log.debug("Valid Token, {}, Role: {}", email, role);
+                }
 
                 UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
                         userDetails, null, userDetails.getAuthorities()
@@ -51,13 +54,11 @@ public class AuthFilter extends OncePerRequestFilter {
             }
         }
 
-
         try {
             filterChain.doFilter(request, response);
         } catch (Exception e) {
-            log.error("Exception occurred in AuthFilter: " + e.getMessage());
+            log.error("Exception occurred in AuthFilter: {}", e.getMessage());
         }
-
     }
 
     private String getTokenFromRequest(HttpServletRequest request) {

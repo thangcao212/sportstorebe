@@ -10,7 +10,7 @@ import java.util.Objects;
 
 @Entity
 @Table(name = "cart_item", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"cart_id", "product_id"}) // Ràng buộc duy nhất
+        @UniqueConstraint(columnNames = {"cart_id", "product_id", "size"})
 })
 @Getter
 @Setter
@@ -34,10 +34,13 @@ public class CartItem {
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
 
+
     @NotNull(message = "Số lượng không được để trống")
     @Min(value = 1, message = "Số lượng phải lớn hơn hoặc bằng 1")
     @Column(nullable = false)
     private Integer quantity;
+
+    private String size;
 
     // --- equals() & hashCode() ---
     @Override

@@ -27,22 +27,9 @@ public class RegisterRequest {
 
     private UserRole role;
 
-    // Address information
-    @NotBlank(message = "Recipient name is required")
-    private String recipientName;
+
 
     @NotBlank(message = "Phone number is required")
     private String phone;
 
-    @NotBlank(message = "Street is required")
-    private String street;
-
-    @NotBlank(message = "Ward is required")
-    private String ward;
-
-    @NotBlank(message = "District is required")
-    private String district;
-
-    @NotBlank(message = "City is required")
-    private String city;
 }

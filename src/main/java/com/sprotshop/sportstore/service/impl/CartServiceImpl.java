@@ -2,10 +2,7 @@ package com.sprotshop.sportstore.service.impl;
 
 import com.sprotshop.sportstore.entity.*;
 import com.sprotshop.sportstore.exception.NotFoundException;
-import com.sprotshop.sportstore.repository.CartItemRepository;
-import com.sprotshop.sportstore.repository.CartRepository;
-import com.sprotshop.sportstore.repository.ProductRepository;
-import com.sprotshop.sportstore.repository.UserRepository;
+import com.sprotshop.sportstore.repository.*;
 import com.sprotshop.sportstore.request.AddToCartRequest;
 import com.sprotshop.sportstore.request.UpdateCartItemRequest;
 import com.sprotshop.sportstore.response.CartItemResponse;
@@ -34,6 +31,7 @@ public class CartServiceImpl implements CartService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final UserService userService;
+    private final ProductSizeRepository productSizeRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -55,11 +53,17 @@ public class CartServiceImpl implements CartService {
         Product product = productRepository.findById(request.getProductId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm với ID: " + request.getProductId()));
 
-        if (product.getStockQuantity() < request.getQuantity()) {
-            throw new IllegalArgumentException("Số lượng tồn kho không đủ cho sản phẩm: " + product.getName());
+
+        ProductSize productSize = productSizeRepository.findByProductAndSize(product, request.getSize())
+                .orElseThrow(() -> new IllegalArgumentException("Size không hợp lệ cho sản phẩm: " + product.getName()));
+
+        if (productSize.getStockQuantity() < request.getQuantity()) {
+            throw new IllegalArgumentException("Không đủ tồn kho cho size " + request.getSize());
         }
 
-        Optional<CartItem> existingItemOpt = cartItemRepository.findByCartAndProduct(cart, product);
+
+        Optional<CartItem> existingItemOpt = cartItemRepository.findByCartAndProductAndSize(cart, product, request.getSize());
+
 
         if (existingItemOpt.isPresent()) {
             CartItem existingItem = existingItemOpt.get();
@@ -74,6 +78,7 @@ public class CartServiceImpl implements CartService {
                     .cart(cart)
                     .product(product)
                     .quantity(request.getQuantity())
+                    .size(request.getSize())
                     .build();
             cartItemRepository.save(newItem);
         }
@@ -106,6 +111,8 @@ public class CartServiceImpl implements CartService {
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy giỏ hàng."));
         return mapCartToResponse(updatedCart);
     }
+
+
 
     @Override
     @Transactional
@@ -148,17 +155,7 @@ public class CartServiceImpl implements CartService {
         log.debug("Refetched cart state after removal for response.");
         return mapCartToResponse(updatedCart);
 
-        /*
-        // --- Cách thay thế (Xóa trực tiếp, không dựa vào orphanRemoval) ---
-        // Bỏ bước 3 và 4 ở trên, thay bằng:
-        log.debug("Attempting direct deletion of CartItem ID: {}", itemToRemove.getId());
-        cartItemRepository.delete(itemToRemove);
-        log.info("Deleted CartItem ID: {} directly via repository.", itemToRemove.getId());
-        // Sau đó vẫn thực hiện bước 5 để trả về response
-        Cart updatedCart = findCartByUserWithItems(userId);
-        return mapCartToResponse(updatedCart);
-        // --- Hết cách thay thế ---
-        */
+
     }
 
 
@@ -196,7 +193,7 @@ public class CartServiceImpl implements CartService {
                 Product product = item.getProduct();
                 if (product != null) {
                     String imageUrl = (!CollectionUtils.isEmpty(product.getImages())) ?
-                            product.getImages().get(0).getImageUrl() : null;
+                            product.getImages().stream().findFirst().map(image -> image.getImageUrl()).orElse(null) : null;
                     double itemPrice = Optional.ofNullable(product.getPrice()).orElse(0.0);
                     int quantity = Optional.ofNullable(item.getQuantity()).orElse(0);
                     double itemTotalPrice = itemPrice * quantity;
@@ -209,6 +206,7 @@ public class CartServiceImpl implements CartService {
                             .productImageUrl(imageUrl)
                             .quantity(quantity)
                             .price(itemPrice)
+                                    .size(item.getSize())
                             .itemTotalPrice(itemTotalPrice)
                             .build());
                 }

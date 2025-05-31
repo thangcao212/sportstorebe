@@ -1,5 +1,6 @@
 package com.sprotshop.sportstore.request;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -45,4 +46,20 @@ public class ProductRequest {
     // --- Image Info ---
     private List<MultipartFile> images; // New images to upload
     private List<String> imageIdsToDelete; // Cloudinary Public IDs of images to delete on update
+
+    @Valid // Enable validation for nested objects
+    private List<ProductSizeRequest> sizes;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ProductSizeRequest {
+        @NotBlank(message = "Kích thước không được để trống")
+        private String size; // Ví dụ: "S", "M", "L", "40", "41"
+
+        @NotNull(message = "Số lượng tồn kho cho kích thước không được để trống")
+        @PositiveOrZero(message = "Số lượng tồn kho cho kích thước không được âm")
+        private Integer stockQuantity;
+    }
 }
