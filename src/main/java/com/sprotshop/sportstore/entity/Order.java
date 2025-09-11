@@ -25,50 +25,32 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @ManyToOne
+    @JoinColumn(name = "user_id")
     private User user;
-
-    @CreationTimestamp
-    @Column(updatable = false)
-    private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    private LocalDateTime updatedAt;
-
-    private String notes;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private PaymentMethod paymentMethod;
-
-    @Column(nullable = false)
-    private String paymentStatus;
 
     private String shippingRecipientName;
     private String shippingPhone;
-    private String shippingStreet;
-    private String shippingWard;
-    private String shippingDistrict;
-    private String shippingCity;
 
-    @Column(precision = 15, scale = 2)
-    private BigDecimal totalAmount;
+    @OneToOne(cascade = CascadeType.ALL)
+    @JoinColumn(name = "address_id")
+    private Address address;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private OrderStatus status;
-
-    private String trackingNumber;
-
-    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<OrderItem> orderItems = new ArrayList<>();
 
-    // Getter đảm bảo không trả về null
-    public List<OrderItem> getOrderItems() {
-        if (orderItems == null) {
-            orderItems = new ArrayList<>();
-        }
-        return orderItems;
+    private BigDecimal totalAmount;
+    private OrderStatus status;
+    private PaymentMethod paymentMethod;
+    private String paymentStatus;
+    private String trackingNumber;
+    private String notes;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
     }
 }

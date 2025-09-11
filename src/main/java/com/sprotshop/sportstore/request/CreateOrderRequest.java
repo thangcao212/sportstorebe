@@ -1,4 +1,3 @@
-
 package com.sprotshop.sportstore.request;
 
 import com.sprotshop.sportstore.Enum.PaymentMethod;
@@ -12,13 +11,13 @@ import lombok.*;
 @AllArgsConstructor
 public class CreateOrderRequest {
     @NotBlank(message = "Recipient name is required")
-    private String shippingRecipientName;
+    private String recipientName;
 
     @NotBlank(message = "Phone number is required")
-    private String shippingPhone;
+    private String phone;
 
     @NotBlank(message = "Street address is required")
-    private String shippingStreet;
+    private String street;
 
     @NotNull(message = "Province code is required")
     private Integer provinceCode;

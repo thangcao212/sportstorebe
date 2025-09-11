@@ -1,0 +1,39 @@
+version: '3.8'
+services:
+  mysql-db:
+    image: mysql:8.0
+    container_name: mysql-db
+    environment:
+      MYSQL_ROOT_PASSWORD: password123
+      MYSQL_DATABASE: sportstore
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  redis-db:
+    image: redis:7
+    container_name: redis-db
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sportstore-backend
+    ports:
+      - "8081:8081"
+    environment:
+      - DB_URL=jdbc:mysql://mysql-db:3306/sportstore
+      - DB_USERNAME=root
+      - DB_PASSWORD=password123
+      - SPRING_DATA_REDIS_HOST=redis-db
+      - SPRING_DATA_REDIS_PORT=6379
+      - JWT_SECRET_KEY=thanggdev123456789thanggdev123456789
+    depends_on:
+      - mysql-db
+      - redis-db
+
+volumes:
+  mysql-data:

@@ -1,8 +1,9 @@
 package com.sprotshop.sportstore.utils;
 
 import com.sprotshop.sportstore.entity.Order;
+import com.sprotshop.sportstore.entity.Ward;
+import com.sprotshop.sportstore.repository.WardRepository;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
-import com.sprotshop.sportstore.service.LocationService;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.jpa.domain.Specification;
@@ -14,11 +15,11 @@ import java.util.List;
 @Component
 public class OrderSpecification {
 
-    private static LocationService locationService;
+    private static WardRepository wardRepository;
 
     @Autowired
-    public OrderSpecification(LocationService locationService) {
-        OrderSpecification.locationService = locationService;
+    public OrderSpecification(WardRepository wardRepository) {
+        OrderSpecification.wardRepository = wardRepository;
     }
 
     public static Specification<Order> buildSearchSpecification(OrderSearchRequest request) {
@@ -55,18 +56,16 @@ public class OrderSpecification {
             if (request.getMaxTotalAmount() != null) {
                 predicates.add(cb.lessThanOrEqualTo(root.get("totalAmount"), request.getMaxTotalAmount()));
             }
-            if (request.getShippingCity() != null && !request.getShippingCity().isEmpty()) {
-                predicates.add(cb.equal(root.get("shippingCity"), request.getShippingCity()));
+            if (request.getProvinceCode() != null) {
+                predicates.add(cb.equal(root.get("address").get("provinceCode"), request.getProvinceCode()));
             }
-            if (request.getShippingDistrict() != null && !request.getShippingDistrict().isEmpty()) {
-                predicates.add(cb.equal(root.get("shippingDistrict"), request.getShippingDistrict()));
-            }
-            if (request.getShippingWard() != null && !request.getShippingWard().isEmpty()) {
-                predicates.add(cb.equal(root.get("shippingWard"), request.getShippingWard()));
+            if (request.getDistrictCode() != null) {
+                predicates.add(cb.equal(root.get("address").get("districtCode"), request.getDistrictCode()));
             }
             if (request.getWardCode() != null) {
-                String wardName = locationService.getWardByCode(request.getWardCode()).getName();
-                predicates.add(cb.equal(root.get("shippingWard"), wardName));
+                Ward ward = wardRepository.findById(request.getWardCode())
+                        .orElseThrow(() -> new IllegalArgumentException("Invalid ward code: " + request.getWardCode()));
+                predicates.add(cb.equal(root.get("address").get("fullAddress"), ward.getName()));
             }
             if (request.getTrackingNumber() != null && !request.getTrackingNumber().isEmpty()) {
                 predicates.add(cb.equal(root.get("trackingNumber"), request.getTrackingNumber()));
