@@ -60,7 +60,7 @@ public class UserServiceImpl implements UserService {
         user.setPassword(passwordEncoder.encode(registerRequest.getPassword()));
         user.setPhone(registerRequest.getPhone());
         user.setRole(role);
-        user.setAddresses(new ArrayList<>()); // Có thể bỏ nếu không cần
+//        user.setAddresses(new ArrayList<>()); // Có thể bỏ nếu không cần
 
         User savedUser = userRepository.save(user);
 

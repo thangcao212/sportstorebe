@@ -30,8 +30,8 @@ public class User {
     @Enumerated(EnumType.STRING)
     private UserRole role;
 
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
-    private List<Address> addresses;
+//    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+//    private List<Address> addresses;
 
     @JsonIgnore
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)

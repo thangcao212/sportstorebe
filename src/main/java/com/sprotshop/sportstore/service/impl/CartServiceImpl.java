@@ -99,11 +99,20 @@ public class CartServiceImpl implements CartService {
             throw new SecurityException("Không có quyền cập nhật món hàng này.");
         }
 
-        Product product = cartItem.getProduct();
-        if (product.getStockQuantity() < request.getQuantity()) {
-            throw new IllegalArgumentException("Số lượng tồn kho không đủ cho sản phẩm: " + product.getName());
+        // --- Lấy ra ProductSize theo product + size ---
+        ProductSize productSize = productSizeRepository.findByProductIdAndSize(
+                cartItem.getProduct().getId(), cartItem.getSize()
+        ).orElseThrow(() -> new NotFoundException("Không tìm thấy tồn kho cho size: " + cartItem.getSize()));
+
+        // --- Kiểm tra tồn kho theo size ---
+        if (productSize.getStockQuantity() < request.getQuantity()) {
+            throw new IllegalArgumentException(
+                    String.format("Số lượng tồn kho không đủ. Size %s hiện chỉ còn %d cái",
+                            cartItem.getSize(), productSize.getStockQuantity())
+            );
         }
 
+        // --- Update số lượng ---
         cartItem.setQuantity(request.getQuantity());
         cartItemRepository.save(cartItem);
 
@@ -111,6 +120,7 @@ public class CartServiceImpl implements CartService {
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy giỏ hàng."));
         return mapCartToResponse(updatedCart);
     }
+
 
 
 

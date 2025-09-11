@@ -1,46 +1,33 @@
 package com.sprotshop.sportstore.entity;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
-import java.time.LocalDateTime;
-
-@Getter
-@Setter
+@Entity
+@Table(name = "addresses")
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Entity
-@Table(name = "address")
+@Builder
 public class Address {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
-    @ManyToOne
-    @JoinColumn(name = "user_id")
-    @JsonIgnore
-    private User user;
-    
-    private String recipientName;
-    private String phone;
+
+    @Column(name = "province_code")
+    private int provinceCode;
+
+    @Column(name = "district_code")
+    private int districtCode;
+
+    @Column(name = "ward_code")
+    private int wardCode;
+
     private String street;
-    private String ward;
-    private String district;
-    private String city;
-    private Boolean isDefault;
-    
-    private LocalDateTime createdAt;
-    
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-    }
 
-
-
-
+    @Column(name = "full_address")
+    private String fullAddress;
 }
+
+
+

@@ -1,5 +1,4 @@
-
-        package com.sprotshop.sportstore.controller;
+package com.sprotshop.sportstore.controller;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
 import com.sprotshop.sportstore.Enum.PaymentMethod;
@@ -9,6 +8,7 @@ import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.response.OrderResponse;
 import com.sprotshop.sportstore.service.OrderService;
+import com.sprotshop.sportstore.service.ProvinceService;
 import com.sprotshop.sportstore.exception.NotFoundException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +36,7 @@ public class OrderController {
 
     private static final Logger log = LoggerFactory.getLogger(OrderController.class);
     private final OrderService orderService;
+    private final ProvinceService provinceService;
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
@@ -67,20 +68,14 @@ public class OrderController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> getUserOrderHistory(
             @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        Page<OrderResponse> orderPage = orderService.getUserOrders(pageable);
-        PageResponse<OrderResponse> pageResponse = PageResponse.<OrderResponse>builder()
-                .data(orderPage.getContent())
-                .currentPage(orderPage.getNumber())
-                .pageSize(orderPage.getSize())
-                .totalElements(orderPage.getTotalElements())
-                .totalPages(orderPage.getTotalPages())
-                .build();
+        PageResponse<OrderResponse> pageResponse = orderService.getUserOrders(pageable);
         return ResponseEntity.ok(ApiResponse.<PageResponse<OrderResponse>>builder()
                 .message("Success")
                 .data(pageResponse)
                 .status(HttpStatus.OK.value())
                 .build());
     }
+
 
     @GetMapping("/{orderId}")
     @PreAuthorize("isAuthenticated()")
@@ -130,20 +125,14 @@ public class OrderController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> getAllOrders(
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        Page<OrderResponse> orderPage = orderService.getAllOrders(pageable);
-        PageResponse<OrderResponse> pageResponse = PageResponse.<OrderResponse>builder()
-                .data(orderPage.getContent())
-                .currentPage(orderPage.getNumber())
-                .pageSize(orderPage.getSize())
-                .totalElements(orderPage.getTotalElements())
-                .totalPages(orderPage.getTotalPages())
-                .build();
+        PageResponse<OrderResponse> pageResponse = orderService.getAllOrders(pageable);
         return ResponseEntity.ok(ApiResponse.<PageResponse<OrderResponse>>builder()
                 .message("Success")
                 .data(pageResponse)
                 .status(HttpStatus.OK.value())
                 .build());
     }
+
 
     @GetMapping("/admin/{orderId}")
     @PreAuthorize("hasRole('ADMIN')")
@@ -274,5 +263,23 @@ public class OrderController {
                 .build());
     }
 
-
+    @PostMapping("/sync")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<String>> syncData() {
+        try {
+            provinceService.syncAllData();
+            return ResponseEntity.ok(ApiResponse.<String>builder()
+                    .message("Data synchronization started")
+                    .data("Sync in progress")
+                    .status(HttpStatus.OK.value())
+                    .build());
+        } catch (Exception e) {
+            log.error("Error starting sync", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.<String>builder()
+                            .message("Error starting sync: " + e.getMessage())
+                            .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                            .build());
+        }
+    }
 }
