@@ -7,6 +7,7 @@ import com.sprotshop.sportstore.exception.NotFoundException;
 import com.sprotshop.sportstore.repository.*;
 import com.sprotshop.sportstore.request.CreateOrderRequest;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
+import com.sprotshop.sportstore.request.SearchOrderRequest;
 import com.sprotshop.sportstore.response.OrderResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.service.CartService;
@@ -53,7 +54,6 @@ public class OrderServiceImpl implements OrderService {
     private final ProductSizeRepository productSizeRepository;
     private final CacheManager cacheManager;
 
-
     @Override
     @Transactional
     @CacheEvict(value = {"userOrders", "allOrders"}, allEntries = true)
@@ -88,8 +88,9 @@ public class OrderServiceImpl implements OrderService {
             int quantity = cartItem.getQuantity();
             String productSizeKey = product.getId() + "-" + size; // Key: productId-size
 
-            ProductSize variant =   productSizeRepository.findByProductIdAndSize(product.getId(), size).orElseThrow();
-            if (variant == null || variant.getStockQuantity() < quantity) {
+            ProductSize variant = productSizeRepository.findByProductIdAndSize(product.getId(), size)
+                    .orElseThrow(() -> new NotFoundException("Product size not found for productId: " + product.getId() + ", size: " + size));
+            if (variant.getStockQuantity() < quantity) {
                 throw new IllegalArgumentException("Product out of stock for size " + size + ": " + product.getName());
             }
 
@@ -111,8 +112,6 @@ public class OrderServiceImpl implements OrderService {
                 .build();
         addressRepository.save(address);
 
-
-
         Order order = Order.builder()
                 .user(currentUser)
                 .address(address)
@@ -121,6 +120,7 @@ public class OrderServiceImpl implements OrderService {
                 .paymentMethod(request.getPaymentMethod())
                 .paymentStatus("PENDING")
                 .shippingRecipientName(request.getRecipientName())
+                .shippingPhone(request.getPhone())
                 .notes(request.getNotes())
                 .orderItems(new ArrayList<>())
                 .build();
@@ -150,7 +150,8 @@ public class OrderServiceImpl implements OrderService {
             String[] parts = productSizeKey.split("-");
             Long productId = Long.parseLong(parts[0]);
             String size = parts[1];
-            ProductSize variant = productSizeRepository.findByProductIdAndSize(productId, size).orElseThrow();
+            ProductSize variant = productSizeRepository.findByProductIdAndSize(productId, size)
+                    .orElseThrow(() -> new NotFoundException("Product size not found for productId: " + productId + ", size: " + size));
             variant.setStockQuantity(variant.getStockQuantity() - quantity);
             productSizeRepository.save(variant);
         });
@@ -159,17 +160,6 @@ public class OrderServiceImpl implements OrderService {
         Hibernate.initialize(savedOrder.getOrderItems());
         return OrderResponse.fromEntity(orderRepository.findById(savedOrder.getId()).orElseThrow());
     }
-
-    // Các phương thức khác giữ nguyên
-//    @Override
-//    @Transactional(readOnly = true)
-////    @Cacheable(value = "userOrders", key = "#pageable.pageNumber + '-' + #pageable.pageSize")
-//    public Page<OrderResponse> getUserOrders(Pageable pageable) {
-//        User currentUser = userService.getCurrentLoggedInUser();
-//        Page<Order> orders = orderRepository.findByUserId(currentUser.getId(), pageable);
-//        orders.forEach(order -> Hibernate.initialize(order.getOrderItems()));
-//        return orders.map(OrderResponse::fromEntity);
-//    }
 
     @Override
     @Transactional(readOnly = true)
@@ -187,17 +177,32 @@ public class OrderServiceImpl implements OrderService {
         User currentUser = userService.getCurrentLoggedInUser();
         Order order = orderRepository.findByIdAndUserId(orderId, currentUser.getId())
                 .orElseThrow(() -> new NotFoundException("Order not found: " + orderId));
-        if (!List.of(OrderStatus.PENDING, OrderStatus.WAITING_FOR_PAYMENT, OrderStatus.PROCESSING).contains(order.getStatus())) {
+
+        if (!List.of(OrderStatus.PENDING, OrderStatus.WAITING_FOR_PAYMENT, OrderStatus.PROCESSING)
+                .contains(order.getStatus())) {
             throw new IllegalStateException("Cannot cancel order in state: " + order.getStatus());
         }
+
         Hibernate.initialize(order.getOrderItems());
+
         if (!order.getOrderItems().isEmpty()) {
+            List<ProductSize> variantsToUpdate = new ArrayList<>();
+
             order.getOrderItems().forEach(item -> {
-                Product product = item.getProduct();
-                product.setStockQuantity(product.getStockQuantity() + item.getQuantity());
-                productRepository.save(product);
+                ProductSize variant = productSizeRepository.findByProductIdAndSize(
+                        item.getProduct().getId(),
+                        item.getSize()
+                ).orElseThrow(() -> new NotFoundException(
+                        "ProductSize not found for productId " + item.getProduct().getId() +
+                                " and size " + item.getSize()
+                ));
+                variant.setStockQuantity(variant.getStockQuantity() + item.getQuantity());
+                variantsToUpdate.add(variant);
             });
+
+            productSizeRepository.saveAll(variantsToUpdate);
         }
+
         order.setStatus(OrderStatus.CANCELED);
         return OrderResponse.fromEntity(orderRepository.save(order));
     }
@@ -234,26 +239,6 @@ public class OrderServiceImpl implements OrderService {
         return OrderResponse.fromEntity(order);
     }
 
-//    @Override
-//    @Transactional(readOnly = true)
-////    @Cacheable(value = "allOrders", key = "#pageable.pageNumber + '-' + #pageable.pageSize")
-//    public Page<OrderResponse> getAllOrders(Pageable pageable) {
-//        Page<Order> orders = orderRepository.findAll(pageable);
-//        orders.forEach(order -> Hibernate.initialize(order.getOrderItems()));
-//        return orders.map(OrderResponse::fromEntity);
-//    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Page<OrderResponse> searchOrders(OrderSearchRequest searchRequest, Pageable pageable) {
-        log.info("Searching orders with request: {}", searchRequest);
-        Specification<Order> spec = OrderSpecification.buildSearchSpecification(searchRequest);
-        Page<Order> orders = orderRepository.findAll(spec, pageable);
-        log.info("Found {} orders", orders.getTotalElements());
-        orders.forEach(order -> Hibernate.initialize(order.getOrderItems()));
-        return orders.map(OrderResponse::fromEntity);
-    }
-
     @Override
     @Transactional(readOnly = true)
     @Cacheable(value = "userOrders", keyGenerator = "userOrderKeyGenerator")
@@ -273,6 +258,14 @@ public class OrderServiceImpl implements OrderService {
         return PageResponse.fromPage(orders.map(OrderResponse::fromEntity));
     }
 
-
-
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<OrderResponse> searchOrders(OrderSearchRequest request, Pageable pageable) {
+        log.info("Searching orders with request: {}", request);
+        Specification<Order> spec = OrderSpecification.filterOrders(request);
+        Page<Order> orders = orderRepository.findAll(spec, pageable);
+        log.info("Found {} orders", orders.getTotalElements());
+        orders.forEach(order -> Hibernate.initialize(order.getOrderItems()));
+        return PageResponse.fromPage(orders.map(OrderResponse::fromEntity));
+    }
 }
