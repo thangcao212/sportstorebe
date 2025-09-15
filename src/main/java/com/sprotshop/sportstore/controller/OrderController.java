@@ -4,6 +4,7 @@ import com.sprotshop.sportstore.Enum.OrderStatus;
 import com.sprotshop.sportstore.Enum.PaymentMethod;
 import com.sprotshop.sportstore.request.CreateOrderRequest;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
+import com.sprotshop.sportstore.request.SearchOrderRequest;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.response.OrderResponse;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -208,60 +210,23 @@ public class OrderController {
         }
     }
 
-    @GetMapping("/admin/search")
-    @PreAuthorize("hasRole('ADMIN')")
+
+    @PostMapping("/search")
     public ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> searchOrders(
-            @RequestParam(required = false) Long orderId,
-            @RequestParam(required = false) Long userId,
-            @RequestParam(required = false) String userEmail,
-            @RequestParam(required = false) OrderStatus status,
-            @RequestParam(required = false) PaymentMethod paymentMethod,
-            @RequestParam(required = false) String paymentStatus,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime createdAtFrom,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime createdAtTo,
-            @RequestParam(required = false) BigDecimal minTotalAmount,
-            @RequestParam(required = false) BigDecimal maxTotalAmount,
-            @RequestParam(required = false) String shippingCity,
-            @RequestParam(required = false) String shippingDistrict,
-            @RequestParam(required = false) String shippingWard,
-            @RequestParam(required = false) String trackingNumber,
-            @RequestParam(required = false) Integer provinceCode,
-            @RequestParam(required = false) Integer districtCode,
-            @RequestParam(required = false) Integer wardCode,
-            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        OrderSearchRequest request = OrderSearchRequest.builder()
-                .orderId(orderId)
-                .userId(userId)
-                .userEmail(userEmail)
-                .status(status)
-                .paymentMethod(paymentMethod)
-                .paymentStatus(paymentStatus)
-                .createdAtFrom(createdAtFrom)
-                .createdAtTo(createdAtTo)
-                .minTotalAmount(minTotalAmount)
-                .maxTotalAmount(maxTotalAmount)
-                .shippingCity(shippingCity)
-                .shippingDistrict(shippingDistrict)
-                .shippingWard(shippingWard)
-                .trackingNumber(trackingNumber)
-                .provinceCode(provinceCode)
-                .districtCode(districtCode)
-                .wardCode(wardCode)
-                .build();
-        Page<OrderResponse> orderPage = orderService.searchOrders(request, pageable);
-        PageResponse<OrderResponse> pageResponse = PageResponse.<OrderResponse>builder()
-                .data(orderPage.getContent())
-                .currentPage(orderPage.getNumber())
-                .pageSize(orderPage.getSize())
-                .totalElements(orderPage.getTotalElements())
-                .totalPages(orderPage.getTotalPages())
-                .build();
+            @RequestBody OrderSearchRequest request,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        log.info("Searching orders with request: {}, page: {}, size: {}", request, page, size);
+        Pageable pageable = PageRequest.of(page, size);
+        PageResponse<OrderResponse> response = orderService.searchOrders(request, pageable);
         return ResponseEntity.ok(ApiResponse.<PageResponse<OrderResponse>>builder()
                 .message("Orders searched successfully")
-                .data(pageResponse)
+                .data(response)
                 .status(HttpStatus.OK.value())
                 .build());
     }
+
+
 
     @PostMapping("/sync")
     @PreAuthorize("hasRole('ADMIN')")
