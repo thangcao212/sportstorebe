@@ -1,34 +1,25 @@
-
 package com.sprotshop.sportstore.request;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.sprotshop.sportstore.Enum.OrderStatus;
-import com.sprotshop.sportstore.Enum.PaymentMethod;
 import lombok.*;
-
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class OrderSearchRequest {
-    private Long orderId;
-    private Long userId;
-    private String userEmail;
-    private OrderStatus status;
-    private PaymentMethod paymentMethod;
-    private String paymentStatus;
-    private LocalDateTime createdAtFrom;
-    private LocalDateTime createdAtTo;
-    private BigDecimal minTotalAmount;
-    private BigDecimal maxTotalAmount;
-    private String shippingCity;
-    private String shippingDistrict;
-    private String shippingWard;
-    private String trackingNumber;
-
+    private Double minTotalAmount;
+    private Double maxTotalAmount;
+    private List<OrderStatus> status;
     private Integer provinceCode;
     private Integer districtCode;
     private Integer wardCode;
+    private String search;
+    private Long productId;
+    private LocalDateTime startDate;
+    private LocalDateTime endDate;
 }
