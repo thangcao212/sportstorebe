@@ -111,4 +111,26 @@ public class ProvinceService {
         log.info("Data synchronization completed");
         return CompletableFuture.completedFuture(null);
     }
+
+    @Transactional(readOnly = true)
+    @Cacheable(value = "provinces")
+    public List<Province> getAllProvinces() {
+        log.info("Fetching all provinces from database");
+        return provinceRepository.findAll();
+    }
+
+    @Transactional(readOnly = true)
+    @Cacheable(value = "districts", key = "#provinceCode")
+    public List<District> getDistrictsByProvince(int provinceCode) {
+        log.info("Fetching districts for province code: {}", provinceCode);
+        return districtRepository.findByProvinceCode(provinceCode);
+    }
+
+    @Transactional(readOnly = true)
+    @Cacheable(value = "wards", key = "#districtCode")
+    public List<Ward> getWardsByDistrict(int districtCode) {
+        log.info("Fetching wards for district code: {}", districtCode);
+        return wardRepository.findByDistrictCode(districtCode);
+    }
+
 }
