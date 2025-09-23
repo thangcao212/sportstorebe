@@ -9,10 +9,6 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Repository interface for ProductCategory entity
- * Provides CRUD operations and custom query methods for ProductCategory entities
- */
 @Repository
 public interface ProductCategoryRepository extends JpaRepository<ProductCategory, Long> {
 

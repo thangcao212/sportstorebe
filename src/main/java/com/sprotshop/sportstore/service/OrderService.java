@@ -3,11 +3,9 @@ package com.sprotshop.sportstore.service;
 
 import com.sprotshop.sportstore.request.CreateOrderRequest;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
-import com.sprotshop.sportstore.request.SearchOrderRequest;
 import com.sprotshop.sportstore.response.OrderResponse;
 import com.sprotshop.sportstore.Enum.OrderStatus;
 import com.sprotshop.sportstore.response.PageResponse;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 public interface OrderService {

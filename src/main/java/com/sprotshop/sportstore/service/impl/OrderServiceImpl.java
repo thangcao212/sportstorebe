@@ -1,13 +1,11 @@
 package com.sprotshop.sportstore.service.impl;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
-import com.sprotshop.sportstore.Enum.PaymentMethod;
 import com.sprotshop.sportstore.entity.*;
-import com.sprotshop.sportstore.exception.NotFoundException;
+import com.sprotshop.sportstore.exception.*;
 import com.sprotshop.sportstore.repository.*;
 import com.sprotshop.sportstore.request.CreateOrderRequest;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
-import com.sprotshop.sportstore.request.SearchOrderRequest;
 import com.sprotshop.sportstore.response.OrderResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.service.CartService;
@@ -18,7 +16,6 @@ import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
@@ -52,11 +49,10 @@ public class OrderServiceImpl implements OrderService {
     private final WardRepository wardRepository;
     private final AddressRepository addressRepository;
     private final ProductSizeRepository productSizeRepository;
-    private final CacheManager cacheManager;
 
     @Override
     @Transactional
-    @CacheEvict(value = {"userOrders", "allOrders"}, allEntries = true)
+    @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
     public OrderResponse createOrderFromCart(CreateOrderRequest request) {
         User currentUser = userService.getCurrentLoggedInUser();
         Long userId = currentUser.getId();
@@ -64,17 +60,17 @@ public class OrderServiceImpl implements OrderService {
 
         // Validate location codes
         Province province = provinceRepository.findById(request.getProvinceCode())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid province code: " + request.getProvinceCode()));
+                .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ: " + request.getProvinceCode()));
         District district = districtRepository.findById(request.getDistrictCode())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid district code: " + request.getDistrictCode()));
+                .orElseThrow(() -> new NotFoundException("Mã huyện không hợp lệ: " + request.getDistrictCode()));
         Ward ward = wardRepository.findById(request.getWardCode())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid ward code: " + request.getWardCode()));
+                .orElseThrow(() -> new NotFoundException("Mã xã không hợp lệ: " + request.getWardCode()));
 
         Cart cart = cartRepository.findByUserId(userId)
-                .orElseThrow(() -> new NotFoundException("Cart not found for user ID: " + userId));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy giỏ hàng cho user ID: " + userId));
 
         if (CollectionUtils.isEmpty(cart.getCartItems())) {
-            throw new IllegalStateException("Cart is empty");
+            throw new IllegalStateException("Giỏ hàng trống");
         }
 
         Map<String, Integer> productSizeQuantityMap = new HashMap<>();
@@ -86,12 +82,12 @@ public class OrderServiceImpl implements OrderService {
             Product product = cartItem.getProduct();
             String size = cartItem.getSize();
             int quantity = cartItem.getQuantity();
-            String productSizeKey = product.getId() + "-" + size; // Key: productId-size
+            String productSizeKey = product.getId() + "-" + size;
 
             ProductSize variant = productSizeRepository.findByProductIdAndSize(product.getId(), size)
-                    .orElseThrow(() -> new NotFoundException("Product size not found for productId: " + product.getId() + ", size: " + size));
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + product.getId() + ", size: " + size));
             if (variant.getStockQuantity() < quantity) {
-                throw new IllegalArgumentException("Product out of stock for size " + size + ": " + product.getName());
+                throw new IllegalStateException("Sản phẩm hết hàng cho kích thước " + size + ": " + product.getName());
             }
 
             BigDecimal price = BigDecimal.valueOf(product.getPrice());
@@ -132,7 +128,7 @@ public class OrderServiceImpl implements OrderService {
             Long productId = Long.parseLong(parts[0]);
             String size = parts[1];
             Product product = productRepository.findById(productId)
-                    .orElseThrow(() -> new NotFoundException("Product not found: " + productId));
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm: " + productId));
 
             OrderItem item = OrderItem.builder()
                     .order(savedOrder)
@@ -142,8 +138,8 @@ public class OrderServiceImpl implements OrderService {
                     .size(size)
                     .build();
             orderItems.add(item);
-            orderItemRepository.save(item);
         }
+        orderItemRepository.saveAll(orderItems); // Sử dụng saveAll thay vì save từng item
         savedOrder.setOrderItems(orderItems);
 
         stockUpdates.forEach((productSizeKey, quantity) -> {
@@ -151,7 +147,7 @@ public class OrderServiceImpl implements OrderService {
             Long productId = Long.parseLong(parts[0]);
             String size = parts[1];
             ProductSize variant = productSizeRepository.findByProductIdAndSize(productId, size)
-                    .orElseThrow(() -> new NotFoundException("Product size not found for productId: " + productId + ", size: " + size));
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + productId + ", size: " + size));
             variant.setStockQuantity(variant.getStockQuantity() - quantity);
             productSizeRepository.save(variant);
         });
@@ -166,21 +162,22 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse getOrderDetails(Long orderId) {
         User currentUser = userService.getCurrentLoggedInUser();
         Order order = orderRepository.findByIdAndUserId(orderId, currentUser.getId())
-                .orElseThrow(() -> new NotFoundException("Order not found: " + orderId));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
         Hibernate.initialize(order.getOrderItems());
         return OrderResponse.fromEntity(order);
     }
 
     @Override
     @Transactional
+    @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
     public OrderResponse cancelOrder(Long orderId) {
         User currentUser = userService.getCurrentLoggedInUser();
         Order order = orderRepository.findByIdAndUserId(orderId, currentUser.getId())
-                .orElseThrow(() -> new NotFoundException("Order not found: " + orderId));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
 
         if (!List.of(OrderStatus.PENDING, OrderStatus.WAITING_FOR_PAYMENT, OrderStatus.PROCESSING)
                 .contains(order.getStatus())) {
-            throw new IllegalStateException("Cannot cancel order in state: " + order.getStatus());
+            throw new IllegalStateException("Không thể hủy đơn hàng ở trạng thái: " + order.getStatus());
         }
 
         Hibernate.initialize(order.getOrderItems());
@@ -193,8 +190,7 @@ public class OrderServiceImpl implements OrderService {
                         item.getProduct().getId(),
                         item.getSize()
                 ).orElseThrow(() -> new NotFoundException(
-                        "ProductSize not found for productId " + item.getProduct().getId() +
-                                " and size " + item.getSize()
+                        "Không tìm thấy kích thước sản phẩm: " + item.getProduct().getId() + ", size: " + item.getSize()
                 ));
                 variant.setStockQuantity(variant.getStockQuantity() + item.getQuantity());
                 variantsToUpdate.add(variant);
@@ -209,9 +205,10 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
     public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new NotFoundException("Order not found: " + orderId));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
         order.setStatus(newStatus);
         Hibernate.initialize(order.getOrderItems());
         return OrderResponse.fromEntity(orderRepository.save(order));
@@ -219,9 +216,10 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
     public OrderResponse addTrackingNumber(Long orderId, String trackingNumber) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new NotFoundException("Order not found: " + orderId));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
         order.setTrackingNumber(trackingNumber);
         if (order.getStatus() == OrderStatus.PROCESSING) {
             order.setStatus(OrderStatus.SHIPPED);
@@ -234,7 +232,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public OrderResponse getOrderByIdForAdmin(Long orderId) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new NotFoundException("Order not found: " + orderId));
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
         Hibernate.initialize(order.getOrderItems());
         return OrderResponse.fromEntity(order);
     }
@@ -261,10 +259,10 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(readOnly = true)
     public PageResponse<OrderResponse> searchOrders(OrderSearchRequest request, Pageable pageable) {
-        log.info("Searching orders with request: {}", request);
+        log.info("Tìm kiếm đơn hàng với request: {}", request);
         Specification<Order> spec = OrderSpecification.filterOrders(request);
         Page<Order> orders = orderRepository.findAll(spec, pageable);
-        log.info("Found {} orders", orders.getTotalElements());
+        log.info("Tìm thấy {} đơn hàng", orders.getTotalElements());
         orders.forEach(order -> Hibernate.initialize(order.getOrderItems()));
         return PageResponse.fromPage(orders.map(OrderResponse::fromEntity));
     }
