@@ -4,11 +4,14 @@ import com.sprotshop.sportstore.entity.User;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.service.UserService;
+import com.sprotshop.sportstore.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/user")
@@ -42,6 +45,38 @@ public class UserController {
                 .build();
 
         return ResponseEntity.ok(response);
+    }
+    /// ///
+    private final UserStatsService userStatsService;
+
+    @GetMapping("/daily")
+    public ApiResponse<Map<Integer, Long>> getDaily(
+            @RequestParam int month,
+            @RequestParam int year
+    ) {
+        return ApiResponse.<Map<Integer, Long>>builder()
+                .status(200)
+                .message("Thống kê user mới theo ngày")
+                .data(userStatsService.getNewUsersByDay(month, year))
+                .build();
+    }
+
+    @GetMapping("/monthly")
+    public ApiResponse<Map<Integer, Long>> getMonthly(@RequestParam int year) {
+        return ApiResponse.<Map<Integer, Long>>builder()
+                .status(200)
+                .message("Thống kê user mới theo tháng")
+                .data(userStatsService.getNewUsersByMonth(year))
+                .build();
+    }
+
+    @GetMapping("/yearly")
+    public ApiResponse<Map<Integer, Long>> getYearly() {
+        return ApiResponse.<Map<Integer, Long>>builder()
+                .status(200)
+                .message("Thống kê user mới theo năm")
+                .data(userStatsService.getNewUsersByYear())
+                .build();
     }
 
 

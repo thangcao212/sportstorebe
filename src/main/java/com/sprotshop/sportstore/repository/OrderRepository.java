@@ -2,6 +2,7 @@
 package com.sprotshop.sportstore.repository;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
+import com.sprotshop.sportstore.Enum.PaymentStatus;
 import com.sprotshop.sportstore.entity.Order;
 import io.lettuce.core.dynamic.annotation.Param;
 import org.springframework.data.domain.Page;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -55,4 +57,29 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     Long sumTotalAmount();
 
     Long countByStatus(OrderStatus status);
+
+    //
+    // Đếm theo trạng thái
+    @Query("SELECT o.status, COUNT(o) FROM Order o GROUP BY o.status")
+    List<Object[]> countOrdersByStatus();
+
+    // Doanh thu theo tháng
+    @Query("SELECT MONTH(o.createdAt), SUM(o.totalAmount) " +
+            "FROM Order o WHERE YEAR(o.createdAt) = :year " +
+            "GROUP BY MONTH(o.createdAt)")
+    List<Object[]> sumRevenueByMonth(@Param("year") int year);
+
+    @Query("""
+    SELECT p.name, SUM(od.quantity) as total
+    FROM OrderItem od 
+    JOIN od.product p 
+    JOIN od.order o 
+    WHERE o.status = com.sprotshop.sportstore.Enum.OrderStatus.COMPLETED
+    GROUP BY p.id, p.name
+    ORDER BY total DESC
+""")
+    List<Object[]> findTopProducts(Pageable pageable);
+
+    // Trong com.sprotshop.sportstore.repository.OrderRepository extends JpaRepository<Order, Long>
+    Optional<Order> findByIdAndTotalAmountAndPaymentStatus(Long id, BigDecimal totalAmount, PaymentStatus paymentStatus);
 }
