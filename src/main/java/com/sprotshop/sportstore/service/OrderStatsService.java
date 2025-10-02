@@ -3,6 +3,7 @@ package com.sprotshop.sportstore.service;
 import com.sprotshop.sportstore.Enum.OrderStatus;
 import com.sprotshop.sportstore.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
@@ -69,4 +70,57 @@ public class OrderStatsService {
         summary.put("totalCompleted", orderRepository.countByStatus(OrderStatus.COMPLETED));
         return summary;
     }
+
+    ///
+
+    public Map<String, Long> getOrderStatusRatio() {
+        List<Object[]> results = orderRepository.countOrdersByStatus();
+        Map<String, Long> map = new HashMap<>();
+        for (Object[] row : results) {
+            String status = row[0].toString();
+            Long count = ((Number) row[1]).longValue();
+            map.put(status, count);
+        }
+        return map;
+    }
+
+    public Map<Integer, Double> getMonthlyRevenue(int year) {
+        List<Object[]> results = orderRepository.sumRevenueByMonth(year);
+        Map<Integer, Double> map = new LinkedHashMap<>();
+        for (int m = 1; m <= 12; m++) {
+            map.put(m, 0.0);
+        }
+        for (Object[] row : results) {
+            Integer month = ((Number) row[0]).intValue();
+            Double revenue = ((Number) row[1]).doubleValue();
+            map.put(month, revenue);
+        }
+        return map;
+    }
+
+//    public Map<Integer, Long> getNewCustomers(int year) {
+//        List<Object[]> results = userRepository.countNewUsersByMonth(year);
+//        Map<Integer, Long> map = new LinkedHashMap<>();
+//        for (int m = 1; m <= 12; m++) {
+//            map.put(m, 0L);
+//        }
+//        for (Object[] row : results) {
+//            Integer month = ((Number) row[0]).intValue();
+//            Long count = ((Number) row[1]).longValue();
+//            map.put(month, count);
+//        }
+//        return map;
+//    }
+
+    public List<Map<String, Object>> getTopProducts(int limit) {
+        List<Object[]> results = orderRepository.findTopProducts(PageRequest.of(0, limit));
+        return results.stream().map(row -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("productName", row[0]);
+            map.put("totalSold", ((Number) row[1]).longValue());
+            return map;
+        }).collect(Collectors.toList());
+    }
+
+
 }

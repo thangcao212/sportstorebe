@@ -14,8 +14,11 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
-                        .allowedMethods("GET", "POST", "PUT", "DELETE")
-                        .allowedOrigins("*");
+                        .allowedOrigins("http://localhost:3000", " https://8770ff1c6fa1.ngrok-free.app")
+                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                        .allowedHeaders("Authorization", "Content-Type", "*")
+                        .allowCredentials(true)
+                        .maxAge(3600);
             }
         };
     }

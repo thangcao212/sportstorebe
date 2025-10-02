@@ -2,8 +2,10 @@ package com.sprotshop.sportstore.repository;
 
 import com.sprotshop.sportstore.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -16,24 +18,32 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByEmail(String email);
     
-    /**
-     * Check if a user with the given email exists
-     * @param email the email to check
-     * @return true if a user with the email exists, false otherwise
-     */
+
     boolean existsByEmail(String email);
     
-    /**
-     * Find a user by username
-     * @param username the username to search for
-     * @return the user with the given username, or null if not found
-     */
+
     User findByUsername(String username);
     
-    /**
-     * Check if a user with the given username exists
-     * @param username the username to check
-     * @return true if a user with the username exists, false otherwise
-     */
+
     boolean existsByUsername(String username);
+
+    // Đếm user theo ngày trong tháng
+    @Query("SELECT DAY(u.createdAt), COUNT(u) " +
+            "FROM User u " +
+            "WHERE MONTH(u.createdAt) = :month AND YEAR(u.createdAt) = :year " +
+            "GROUP BY DAY(u.createdAt)")
+    List<Object[]> countNewUsersByDay(int month, int year);
+
+    // Đếm user theo tháng trong năm
+    @Query("SELECT MONTH(u.createdAt), COUNT(u) " +
+            "FROM User u " +
+            "WHERE YEAR(u.createdAt) = :year " +
+            "GROUP BY MONTH(u.createdAt)")
+    List<Object[]> countNewUsersByMonth(int year);
+
+    // Đếm user theo năm (toàn bộ lịch sử)
+    @Query("SELECT YEAR(u.createdAt), COUNT(u) " +
+            "FROM User u " +
+            "GROUP BY YEAR(u.createdAt)")
+    List<Object[]> countNewUsersByYear();
 }

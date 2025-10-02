@@ -3,6 +3,7 @@
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
 import com.sprotshop.sportstore.Enum.PaymentMethod;
+import com.sprotshop.sportstore.Enum.PaymentStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -40,9 +41,18 @@ public class Order {
     private List<OrderItem> orderItems = new ArrayList<>();
 
     private BigDecimal totalAmount;
+    @Column(name = "status")
+    @Enumerated(EnumType.STRING)
     private OrderStatus status;
+
+    @Column(name = "payment_method")
+    @Enumerated(EnumType.STRING)
     private PaymentMethod paymentMethod;
-    private String paymentStatus;
+
+    @Column(name = "payment_status")
+    @Enumerated(EnumType.STRING)
+    private PaymentStatus paymentStatus;
+
     private String trackingNumber;
     private String notes;
 

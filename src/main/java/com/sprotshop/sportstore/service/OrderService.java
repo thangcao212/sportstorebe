@@ -3,6 +3,7 @@ package com.sprotshop.sportstore.service;
 
 import com.sprotshop.sportstore.request.CreateOrderRequest;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
+import com.sprotshop.sportstore.request.SepayWebhookRequest;
 import com.sprotshop.sportstore.response.OrderResponse;
 import com.sprotshop.sportstore.Enum.OrderStatus;
 import com.sprotshop.sportstore.response.PageResponse;
@@ -28,4 +29,5 @@ public interface OrderService {
     //    Page<OrderResponse> searchOrders(SearchOrderRequest searchRequest, Pageable pageable);
     PageResponse<OrderResponse> searchOrders(OrderSearchRequest request, Pageable pageable);
 
+    void handleSepayWebhook(SepayWebhookRequest webhook);
 }

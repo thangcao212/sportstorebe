@@ -1,16 +1,26 @@
+// Updated OrderController.java - Split into separate @Controller for view rendering (getCheckoutPage). Rest remains @RestController.
+// Also, fixed checkPaymentStatus to use orderId from path, not body (matching AJAX in demo). Added query param support if needed.
 package com.sprotshop.sportstore.controller;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
+import com.sprotshop.sportstore.Enum.PaymentMethod;
+import com.sprotshop.sportstore.Enum.PaymentStatus;
+import com.sprotshop.sportstore.entity.Order;
+import com.sprotshop.sportstore.entity.User;
+import com.sprotshop.sportstore.repository.OrderRepository;
 import com.sprotshop.sportstore.request.CreateOrderRequest;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
+import com.sprotshop.sportstore.request.SepayWebhookRequest;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.response.OrderResponse;
 import com.sprotshop.sportstore.service.OrderService;
 import com.sprotshop.sportstore.service.ProvinceService;
 import com.sprotshop.sportstore.exception.NotFoundException;
+import com.sprotshop.sportstore.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -20,10 +30,14 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -33,6 +47,8 @@ public class OrderController {
     private static final Logger log = LoggerFactory.getLogger(OrderController.class);
     private final OrderService orderService;
     private final ProvinceService provinceService;
+    private final OrderRepository orderRepository;
+    private final UserService userService;
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
@@ -71,7 +87,6 @@ public class OrderController {
                 .status(HttpStatus.OK.value())
                 .build());
     }
-
 
     @GetMapping("/{orderId}")
     @PreAuthorize("isAuthenticated()")
@@ -128,7 +143,6 @@ public class OrderController {
                 .status(HttpStatus.OK.value())
                 .build());
     }
-
 
     @GetMapping("/admin/{orderId}")
     @PreAuthorize("hasRole('ADMIN')")
@@ -204,7 +218,6 @@ public class OrderController {
         }
     }
 
-
     @PostMapping("/search")
     public ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> searchOrders(
             @RequestBody OrderSearchRequest request,
@@ -219,8 +232,6 @@ public class OrderController {
                 .status(HttpStatus.OK.value())
                 .build());
     }
-
-
 
     @PostMapping("/sync")
     @PreAuthorize("hasRole('ADMIN')")
@@ -240,5 +251,159 @@ public class OrderController {
                             .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                             .build());
         }
+    }
+
+    @GetMapping("/{orderId}/checkout")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getCheckoutDetails(@PathVariable Long orderId) {
+        try {
+            Order order = orderRepository.findByIdAndUserId(orderId, userService.getCurrentLoggedInUser().getId())
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+
+            Map<String, Object> checkoutData = new HashMap<>();
+            checkoutData.put("orderId", order.getId());
+            checkoutData.put("totalAmount", order.getTotalAmount());
+            checkoutData.put("paymentStatus", order.getPaymentStatus().name());
+            checkoutData.put("paymentMethod", order.getPaymentMethod().name());
+            checkoutData.put("orderStatus", order.getStatus().name());
+
+            if (order.getPaymentMethod() == PaymentMethod.SEPAY && order.getStatus() == OrderStatus.WAITING_FOR_PAYMENT) {
+                // Tương tự, update QR des
+                String qrUrl = String.format("https://qr.sepay.vn/img?bank=VietinBank&acc=109874753814&template=compact&amount=%d&des=SEVQR+TKPCCT+DH%d",
+                        order.getTotalAmount().longValue(), order.getId());
+
+                checkoutData.put("qrCodeUrl", qrUrl);
+                checkoutData.put("bankInfo", Map.of(
+                        "bankName", "VietinBank",
+                        "accountNumber", "109874753814",
+                        "accountHolder", "CAO CHIEN THANG",
+                        "transferContent", "SEVQR TKPCCT DH" + order.getId()
+                ));
+            } else if (order.getPaymentMethod() == PaymentMethod.COD) {
+                checkoutData.put("message", "Đơn hàng COD đã được đặt. Vui lòng chờ giao hàng và thanh toán khi nhận hàng.");
+            } else if (order.getPaymentStatus() == PaymentStatus.PAID) {
+                checkoutData.put("message", "Đơn hàng đã được thanh toán thành công.");
+            }
+
+            return ResponseEntity.ok(ApiResponse.<Map<String, Object>>builder()
+                    .message("Thông tin thanh toán")
+                    .data(checkoutData)
+                    .status(HttpStatus.OK.value())
+                    .build());
+        } catch (NotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.<Map<String, Object>>builder()
+                            .message(e.getMessage())
+                            .status(HttpStatus.NOT_FOUND.value())
+                            .build());
+        }
+    }
+
+    // Fixed: Use path variable orderId directly (no body needed for AJAX check, matching demo)
+    @PostMapping("/{orderId}/check-payment-status")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Map<String, String>>> checkPaymentStatus(@PathVariable Long orderId) {
+        User currentUser = userService.getCurrentLoggedInUser();
+        Optional<Order> orderOpt = orderRepository.findByIdAndUserId(orderId, currentUser.getId());
+        if (orderOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.<Map<String, String>>builder()
+                            .message("Không tìm thấy đơn hàng: " + orderId)
+                            .status(HttpStatus.NOT_FOUND.value())
+                            .build());
+        }
+
+        Order order = orderOpt.get();
+        return ResponseEntity.ok(ApiResponse.<Map<String, String>>builder()
+                .message("Success")
+                .data(Map.of("paymentStatus", order.getPaymentStatus().name()))
+                .status(HttpStatus.OK.value())
+                .build());
+    }
+
+    @PostMapping("/sepay-webhook")
+    public ResponseEntity<ApiResponse<String>> handleSepayWebhook(@RequestBody SepayWebhookRequest webhook) {
+        log.info("Webhook nhận từ SEPAY: {}", webhook);
+        orderService.handleSepayWebhook(webhook);
+        return ResponseEntity.ok(ApiResponse.<String>builder()
+                .status(HttpStatus.OK.value())
+                .message("Webhook processed")
+                .build());
+    }
+
+    @PutMapping("/admin/{orderId}/confirm-cod-payment")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<OrderResponse>> confirmCodPayment(@PathVariable Long orderId) {
+        try {
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+
+            if (order.getPaymentMethod() != PaymentMethod.COD) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.<OrderResponse>builder()
+                                .message("Đơn hàng không sử dụng phương thức COD")
+                                .status(HttpStatus.BAD_REQUEST.value())
+                                .build());
+            }
+
+            if (order.getStatus() != OrderStatus.DELIVERED) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.<OrderResponse>builder()
+                                .message("Đơn hàng COD chỉ có thể xác nhận thanh toán khi đã giao hàng")
+                                .status(HttpStatus.BAD_REQUEST.value())
+                                .build());
+            }
+
+            order.setPaymentStatus(PaymentStatus.PAID);
+            order.setStatus(OrderStatus.COMPLETED);
+            Hibernate.initialize(order.getOrderItems());
+            OrderResponse response = OrderResponse.fromEntity(orderRepository.save(order));
+
+            return ResponseEntity.ok(ApiResponse.<OrderResponse>builder()
+                    .message("Xác nhận thanh toán COD thành công")
+                    .data(response)
+                    .status(HttpStatus.OK.value())
+                    .build());
+        } catch (NotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.<OrderResponse>builder()
+                            .message(e.getMessage())
+                            .status(HttpStatus.NOT_FOUND.value())
+                            .build());
+        }
+    }
+}
+
+// Separate Controller for view rendering
+@Controller
+@RequestMapping("/api/orders")
+@RequiredArgsConstructor
+class CheckoutViewController {
+    private final OrderRepository orderRepository;
+    private final UserService userService;
+    private final OrderService orderService;
+
+    @GetMapping("/{orderId}/checkout-page")
+    @PreAuthorize("isAuthenticated()")
+    public String getCheckoutPage(@PathVariable Long orderId, Model model) {
+        Order order = orderRepository.findByIdAndUserId(orderId, userService.getCurrentLoggedInUser().getId())
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+        OrderResponse orderResponse = OrderResponse.fromEntity(order);
+
+        if (order.getPaymentMethod() == PaymentMethod.SEPAY && order.getStatus() == OrderStatus.WAITING_FOR_PAYMENT) {
+            String qrUrl = String.format("https://qr.sepay.vn/img?bank=VietinBank&acc=109874753814&template=compact&amount=%d&des=DH%d",
+                    order.getTotalAmount().longValue(), order.getId());
+            orderResponse.setQrCodeUrl(qrUrl);
+            Map<String, Object> bankInfo = Map.of(
+                    "bankName", "VietinBank",
+                    "accountNumber", "109874753814",
+                    "accountHolder", "Cao Chiến Thắng",
+                    "transferContent", "DH" + order.getId()
+            );
+            orderResponse.setBankInfo(bankInfo);
+        }
+
+        model.addAttribute("order", orderResponse);
+        return "checkout"; // Assume you have src/main/resources/templates/checkout.html
     }
 }

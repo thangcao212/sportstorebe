@@ -1,15 +1,20 @@
+// Updated OrderServiceImpl.java - Fixed logic in handleSepayWebhook to only process "in" transfers, compare with amountIn logic, and ensure status checks align with original demo
 package com.sprotshop.sportstore.service.impl;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
+import com.sprotshop.sportstore.Enum.PaymentMethod;
+import com.sprotshop.sportstore.Enum.PaymentStatus;
 import com.sprotshop.sportstore.entity.*;
 import com.sprotshop.sportstore.exception.*;
 import com.sprotshop.sportstore.repository.*;
 import com.sprotshop.sportstore.request.CreateOrderRequest;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
+import com.sprotshop.sportstore.request.SepayWebhookRequest;
 import com.sprotshop.sportstore.response.OrderResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.service.CartService;
 import com.sprotshop.sportstore.service.OrderService;
+import com.sprotshop.sportstore.service.TransactionService;
 import com.sprotshop.sportstore.service.UserService;
 import com.sprotshop.sportstore.utils.OrderSpecification;
 import lombok.RequiredArgsConstructor;
@@ -25,11 +30,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
+import java.time.format.DateTimeFormatter;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -49,6 +58,8 @@ public class OrderServiceImpl implements OrderService {
     private final WardRepository wardRepository;
     private final AddressRepository addressRepository;
     private final ProductSizeRepository productSizeRepository;
+    private final TransactionRepository transactionRepository;
+    private final TransactionService transactionService;
 
     @Override
     @Transactional
@@ -58,7 +69,6 @@ public class OrderServiceImpl implements OrderService {
         Long userId = currentUser.getId();
         log.info("Creating order for userId: {}", userId);
 
-        // Validate location codes
         Province province = provinceRepository.findById(request.getProvinceCode())
                 .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ: " + request.getProvinceCode()));
         District district = districtRepository.findById(request.getDistrictCode())
@@ -97,7 +107,6 @@ public class OrderServiceImpl implements OrderService {
             stockUpdates.put(productSizeKey, quantity);
         }
 
-        // Create Address
         String fullAddress = String.format("%s, %s, %s, %s", request.getStreet(), ward.getName(), district.getName(), province.getName());
         Address address = Address.builder()
                 .provinceCode(request.getProvinceCode())
@@ -108,13 +117,17 @@ public class OrderServiceImpl implements OrderService {
                 .build();
         addressRepository.save(address);
 
+        // Gán trạng thái dựa trên paymentMethod
+        OrderStatus orderStatus = request.getPaymentMethod() == PaymentMethod.SEPAY ? OrderStatus.WAITING_FOR_PAYMENT : OrderStatus.PENDING;
+        PaymentStatus paymentStatus = PaymentStatus.PENDING;
+
         Order order = Order.builder()
                 .user(currentUser)
                 .address(address)
                 .totalAmount(totalAmount)
-                .status(OrderStatus.PENDING)
+                .status(orderStatus)
                 .paymentMethod(request.getPaymentMethod())
-                .paymentStatus("PENDING")
+                .paymentStatus(paymentStatus)
                 .shippingRecipientName(request.getRecipientName())
                 .shippingPhone(request.getPhone())
                 .notes(request.getNotes())
@@ -139,7 +152,7 @@ public class OrderServiceImpl implements OrderService {
                     .build();
             orderItems.add(item);
         }
-        orderItemRepository.saveAll(orderItems); // Sử dụng saveAll thay vì save từng item
+        orderItemRepository.saveAll(orderItems);
         savedOrder.setOrderItems(orderItems);
 
         stockUpdates.forEach((productSizeKey, quantity) -> {
@@ -154,10 +167,23 @@ public class OrderServiceImpl implements OrderService {
 
         cartService.clearCart();
         Hibernate.initialize(savedOrder.getOrderItems());
-        return OrderResponse.fromEntity(orderRepository.findById(savedOrder.getId()).orElseThrow());
+
+        OrderResponse response = OrderResponse.fromEntity(orderRepository.findById(savedOrder.getId()).orElseThrow());
+        if (request.getPaymentMethod() == PaymentMethod.SEPAY) {
+            // Thay des=DH%d bằng des=SEVQR+TKPCCT+DH%d
+            String qrUrl = String.format("https://qr.sepay.vn/img?bank=VietinBank&acc=109874753814&template=compact&amount=%d&des=SEVQR+TKPCCT+DH%d",
+                    savedOrder.getTotalAmount().longValue(), savedOrder.getId());
+            response.setQrCodeUrl(qrUrl);
+            response.setBankInfo(Map.of(
+                    "bankName", "VietinBank",
+                    "accountNumber", "109874753814",
+                    "accountHolder", "CAO CHIEN THANG",
+                    "transferContent", "SEVQR TKPCCT DH" + savedOrder.getId()  // Update content hướng dẫn
+            ));
+        }
+        return response;
     }
 
-    @Override
     @Transactional(readOnly = true)
     public OrderResponse getOrderDetails(Long orderId) {
         User currentUser = userService.getCurrentLoggedInUser();
@@ -265,5 +291,75 @@ public class OrderServiceImpl implements OrderService {
         log.info("Tìm thấy {} đơn hàng", orders.getTotalElements());
         orders.forEach(order -> Hibernate.initialize(order.getOrderItems()));
         return PageResponse.fromPage(orders.map(OrderResponse::fromEntity));
+    }
+
+    @Override
+    @Transactional
+    public void handleSepayWebhook(SepayWebhookRequest webhook) {
+        log.info("Processing webhook: sepayTransactionId={}, referenceCode={}, content='{}', amount={}, type={}",
+                webhook.getId(), webhook.getReferenceCode(), webhook.getContent(), webhook.getTransferAmount(), webhook.getTransferType());
+
+        // Only process incoming transfers
+        if (!"in".equalsIgnoreCase(webhook.getTransferType())) {
+            log.info("Ignoring non-incoming transfer: type={}, SepayTransactionId={}", webhook.getTransferType(), webhook.getId());
+            return;
+        }
+
+        // Lưu transaction (sẽ throw nếu duplicate)
+        Transaction tx;
+        try {
+            tx = transactionService.saveFromWebhook(webhook);
+            log.info("Saved transaction: id={}, amountIn={}", tx.getId(), tx.getAmountIn());
+        } catch (IllegalStateException e) {
+            log.warn("Duplicate transaction ignored: {}", e.getMessage());
+            return;  // Không throw, chỉ log để SePay không retry vô tận
+        }
+
+        // Regex tìm mã đơn hàng DH123 (flexible: trim space, case-insensitive)
+        String content = webhook.getContent() != null ? webhook.getContent().trim() : "";
+        if (content.isBlank()) {
+            log.warn("Webhook content empty, skipping. SepayTransactionId={}", webhook.getId());
+            return;
+        }
+
+        Pattern pattern = Pattern.compile("\\bDH\\s*(\\d+)\\b", Pattern.CASE_INSENSITIVE);  // Fix: \b word boundary, \s* cho space
+        Matcher matcher = pattern.matcher(content);
+
+        if (!matcher.find()) {
+            log.warn("No order code found in content: '{}'. SepayTransactionId={}", content, webhook.getId());
+            return;
+        }
+
+        Long orderId;
+        try {
+            orderId = Long.valueOf(matcher.group(1));
+            log.info("Extracted orderId: {} from content", orderId);
+        } catch (NumberFormatException e) {
+            log.error("Failed to parse orderId from '{}': {}", content, e.getMessage());
+            return;
+        }
+
+        // Tìm order: ID + total exact match + status phù hợp (PENDING hoặc WAITING_FOR_PAYMENT)
+        Optional<Order> optionalOrder = orderRepository.findByIdAndTotalAmountAndPaymentStatus(
+                orderId, webhook.getTransferAmount(), PaymentStatus.PENDING);  // Hoặc add overload cho WAITING_FOR_PAYMENT nếu cần
+        if (optionalOrder.isEmpty()) {
+            log.warn("No matching order: id={}, amount={}, status=PENDING. SepayTransactionId={}",
+                    orderId, webhook.getTransferAmount(), webhook.getId());
+            return;
+        }
+
+        Order order = optionalOrder.get();
+
+        // Double-check status (chỉ update nếu chưa PAID)
+        if (order.getPaymentStatus() == PaymentStatus.PAID) {
+            log.info("Order {} already PAID, skipping. SepayTransactionId={}", orderId, webhook.getId());
+            return;
+        }
+
+        // Update
+        order.setPaymentStatus(PaymentStatus.PAID);
+        order.setStatus(OrderStatus.PROCESSING);  // Hoặc PENDING nếu COD, nhưng SEPAY → PROCESSING
+        orderRepository.save(order);
+        log.info("SUCCESS: Updated order {} to PAID/PROCESSING. SepayTransactionId={}", orderId, webhook.getId());
     }
 }

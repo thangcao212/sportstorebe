@@ -35,3 +35,8 @@ spring:
 
 jwt:
   secret-key: ${JWT_SECRET_KEY:thanggdev123456789thanggdev123456789}
+sepay:
+  bank:
+    name: VietinBank
+    accountNumber: 109874753814
+    accountHolder: Cao Chiến Thắng

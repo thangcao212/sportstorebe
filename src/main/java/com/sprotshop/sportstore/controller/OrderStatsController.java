@@ -6,19 +6,8 @@ import com.sprotshop.sportstore.service.OrderStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.Map;
 
-
-
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.sprotshop.sportstore.service.OrderStatsService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -59,4 +48,37 @@ public class OrderStatsController {
                 .data(orderStatsService.getSummary())
                 .build();
     }
+
+    //
+    @GetMapping("/status-ratio")
+    public ApiResponse<Map<String, Long>> getOrderStatusRatio() {
+        return ApiResponse.<Map<String, Long>>builder()
+                .status(200)
+                .message("Tỷ lệ đơn hàng theo trạng thái")
+                .data(orderStatsService.getOrderStatusRatio())
+                .build();
+    }
+
+    @GetMapping("/monthly-revenue")
+    public ApiResponse<Map<Integer, Double>> getMonthlyRevenue(
+            @RequestParam int year
+    ) {
+        return ApiResponse.<Map<Integer, Double>>builder()
+                .status(200)
+                .message("Doanh thu theo tháng")
+                .data(orderStatsService.getMonthlyRevenue(year))
+                .build();
+    }
+
+    @GetMapping("/top-products")
+    public ApiResponse<List<Map<String, Object>>> getTopProducts(
+            @RequestParam(defaultValue = "5") int limit
+    ) {
+        return ApiResponse.<List<Map<String, Object>>>builder()
+                .status(200)
+                .message("Top sản phẩm bán chạy")
+                .data(orderStatsService.getTopProducts(limit))
+                .build();
+    }
+
 }
