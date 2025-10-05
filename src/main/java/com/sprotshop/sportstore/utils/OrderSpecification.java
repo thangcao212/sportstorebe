@@ -50,6 +50,13 @@ public class OrderSpecification {
             if (request.getStatus() != null && !request.getStatus().isEmpty()) {
                 predicates.add(root.get("status").in(request.getStatus()));
             }
+            if(request.getPaymentMethod() != null ){
+                predicates.add(root.get("paymentMethod").in(request.getPaymentMethod()));
+            }
+
+            if(request.getPaymentStatus() != null && !request.getPaymentStatus().isEmpty()) {
+                predicates.add(root.get("paymentStatus").in(request.getPaymentStatus()));
+            }
 
             // Join Address
             Join<Order, Address> addressJoin = root.join("address", JoinType.LEFT);

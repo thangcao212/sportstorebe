@@ -98,19 +98,6 @@ public class OrderStatsService {
         return map;
     }
 
-//    public Map<Integer, Long> getNewCustomers(int year) {
-//        List<Object[]> results = userRepository.countNewUsersByMonth(year);
-//        Map<Integer, Long> map = new LinkedHashMap<>();
-//        for (int m = 1; m <= 12; m++) {
-//            map.put(m, 0L);
-//        }
-//        for (Object[] row : results) {
-//            Integer month = ((Number) row[0]).intValue();
-//            Long count = ((Number) row[1]).longValue();
-//            map.put(month, count);
-//        }
-//        return map;
-//    }
 
     public List<Map<String, Object>> getTopProducts(int limit) {
         List<Object[]> results = orderRepository.findTopProducts(PageRequest.of(0, limit));

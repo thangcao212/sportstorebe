@@ -26,10 +26,13 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -39,6 +42,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -61,10 +65,16 @@ public class OrderServiceImpl implements OrderService {
     private final TransactionRepository transactionRepository;
     private final TransactionService transactionService;
 
+    private static final long WAITING_TIMEOUT_HOURS = 24;
+    private static final long COMPLETE_AFTER_DAYS = 7;
+
+
+
     @Override
     @Transactional
     @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
     public OrderResponse createOrderFromCart(CreateOrderRequest request) {
+        try{
         User currentUser = userService.getCurrentLoggedInUser();
         Long userId = currentUser.getId();
         log.info("Creating order for userId: {}", userId);
@@ -89,22 +99,27 @@ public class OrderServiceImpl implements OrderService {
         Map<String, Integer> stockUpdates = new HashMap<>();
 
         for (CartItem cartItem : cart.getCartItems()) {
-            Product product = cartItem.getProduct();
-            String size = cartItem.getSize();
-            int quantity = cartItem.getQuantity();
-            String productSizeKey = product.getId() + "-" + size;
+            try {
+                Product product = cartItem.getProduct();
+                String size = cartItem.getSize();
+                int quantity = cartItem.getQuantity();
+                String productSizeKey = product.getId() + "-" + size;
 
-            ProductSize variant = productSizeRepository.findByProductIdAndSize(product.getId(), size)
-                    .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + product.getId() + ", size: " + size));
-            if (variant.getStockQuantity() < quantity) {
-                throw new IllegalStateException("Sản phẩm hết hàng cho kích thước " + size + ": " + product.getName());
+                ProductSize variant = productSizeRepository.findByProductIdAndSize(product.getId(), size)
+                        .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + product.getId() + ", size: " + size));
+                if (variant.getStockQuantity() < quantity) {
+                    throw new IllegalStateException("Sản phẩm hết hàng cho kích thước " + size + ": " + product.getName());
+                }
+
+                BigDecimal price = BigDecimal.valueOf(product.getPrice());
+                productSizeQuantityMap.put(productSizeKey, quantity);
+                priceAtOrderMap.put(productSizeKey, price);
+                totalAmount = totalAmount.add(price.multiply(BigDecimal.valueOf(quantity)));
+                stockUpdates.put(productSizeKey, quantity);
+            } catch (NotFoundException | IllegalStateException e) {
+                log.warn("Stock check failed for cartItem {}: {}", cartItem.getId(), e.getMessage());
+                throw e;  // Fail fast
             }
-
-            BigDecimal price = BigDecimal.valueOf(product.getPrice());
-            productSizeQuantityMap.put(productSizeKey, quantity);
-            priceAtOrderMap.put(productSizeKey, price);
-            totalAmount = totalAmount.add(price.multiply(BigDecimal.valueOf(quantity)));
-            stockUpdates.put(productSizeKey, quantity);
         }
 
         String fullAddress = String.format("%s, %s, %s, %s", request.getStreet(), ward.getName(), district.getName(), province.getName());
@@ -118,54 +133,61 @@ public class OrderServiceImpl implements OrderService {
         addressRepository.save(address);
 
         // Gán trạng thái dựa trên paymentMethod
-        OrderStatus orderStatus = request.getPaymentMethod() == PaymentMethod.SEPAY ? OrderStatus.WAITING_FOR_PAYMENT : OrderStatus.PENDING;
-        PaymentStatus paymentStatus = PaymentStatus.PENDING;
+        // Set initial status based on flow
+        OrderStatus initialStatus = (request.getPaymentMethod() == PaymentMethod.SEPAY)
+                ? OrderStatus.WAITING_FOR_PAYMENT : OrderStatus.PENDING;
+        PaymentStatus initialPaymentStatus = PaymentStatus.PENDING;
 
         Order order = Order.builder()
                 .user(currentUser)
                 .address(address)
                 .totalAmount(totalAmount)
-                .status(orderStatus)
+                .status(initialStatus)
                 .paymentMethod(request.getPaymentMethod())
-                .paymentStatus(paymentStatus)
+                .paymentStatus(initialPaymentStatus)
+
                 .shippingRecipientName(request.getRecipientName())
                 .shippingPhone(request.getPhone())
                 .notes(request.getNotes())
                 .orderItems(new ArrayList<>())
                 .build();
         Order savedOrder = orderRepository.save(order);
+        try {
+            List<OrderItem> orderItems = new ArrayList<>();
+            for (Map.Entry<String, Integer> entry : productSizeQuantityMap.entrySet()) {
+                String[] parts = entry.getKey().split("-");
+                Long productId = Long.parseLong(parts[0]);
+                String size = parts[1];
+                Product product = productRepository.findById(productId)
+                        .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm: " + productId));
 
-        List<OrderItem> orderItems = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : productSizeQuantityMap.entrySet()) {
-            String[] parts = entry.getKey().split("-");
-            Long productId = Long.parseLong(parts[0]);
-            String size = parts[1];
-            Product product = productRepository.findById(productId)
-                    .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm: " + productId));
+                OrderItem item = OrderItem.builder()
+                        .order(savedOrder)
+                        .product(product)
+                        .quantity(entry.getValue())
+                        .price(priceAtOrderMap.get(entry.getKey()))
+                        .size(size)
+                        .build();
+                orderItems.add(item);
+            }
+            orderItemRepository.saveAll(orderItems);
+            savedOrder.setOrderItems(orderItems);
 
-            OrderItem item = OrderItem.builder()
-                    .order(savedOrder)
-                    .product(product)
-                    .quantity(entry.getValue())
-                    .price(priceAtOrderMap.get(entry.getKey()))
-                    .size(size)
-                    .build();
-            orderItems.add(item);
+            stockUpdates.forEach((productSizeKey, quantity) -> {
+                String[] parts = productSizeKey.split("-");
+                Long productId = Long.parseLong(parts[0]);
+                String size = parts[1];
+                ProductSize variant = productSizeRepository.findByProductIdAndSize(productId, size)
+                        .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + productId + ", size: " + size));
+                variant.setStockQuantity(variant.getStockQuantity() - quantity);
+                productSizeRepository.save(variant);
+            });
+
+            cartService.clearCart();
+        } catch (Exception e) {
+            log.error("Failed to save items/stock for order {}: {}", savedOrder.getId(), e.getMessage());
+            throw new RuntimeException("Lỗi lưu chi tiết đơn hàng: " + e.getMessage(), e);
         }
-        orderItemRepository.saveAll(orderItems);
-        savedOrder.setOrderItems(orderItems);
-
-        stockUpdates.forEach((productSizeKey, quantity) -> {
-            String[] parts = productSizeKey.split("-");
-            Long productId = Long.parseLong(parts[0]);
-            String size = parts[1];
-            ProductSize variant = productSizeRepository.findByProductIdAndSize(productId, size)
-                    .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + productId + ", size: " + size));
-            variant.setStockQuantity(variant.getStockQuantity() - quantity);
-            productSizeRepository.save(variant);
-        });
-
-        cartService.clearCart();
         Hibernate.initialize(savedOrder.getOrderItems());
 
         OrderResponse response = OrderResponse.fromEntity(orderRepository.findById(savedOrder.getId()).orElseThrow());
@@ -182,6 +204,10 @@ public class OrderServiceImpl implements OrderService {
             ));
         }
         return response;
+    }catch (Exception e) {
+            log.error("Create order failed: {}", e.getMessage(), e);
+            throw e;  // Propagate to controller
+        }
     }
 
     @Transactional(readOnly = true)
@@ -193,66 +219,6 @@ public class OrderServiceImpl implements OrderService {
         return OrderResponse.fromEntity(order);
     }
 
-    @Override
-    @Transactional
-    @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
-    public OrderResponse cancelOrder(Long orderId) {
-        User currentUser = userService.getCurrentLoggedInUser();
-        Order order = orderRepository.findByIdAndUserId(orderId, currentUser.getId())
-                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
-
-        if (!List.of(OrderStatus.PENDING, OrderStatus.WAITING_FOR_PAYMENT, OrderStatus.PROCESSING)
-                .contains(order.getStatus())) {
-            throw new IllegalStateException("Không thể hủy đơn hàng ở trạng thái: " + order.getStatus());
-        }
-
-        Hibernate.initialize(order.getOrderItems());
-
-        if (!order.getOrderItems().isEmpty()) {
-            List<ProductSize> variantsToUpdate = new ArrayList<>();
-
-            order.getOrderItems().forEach(item -> {
-                ProductSize variant = productSizeRepository.findByProductIdAndSize(
-                        item.getProduct().getId(),
-                        item.getSize()
-                ).orElseThrow(() -> new NotFoundException(
-                        "Không tìm thấy kích thước sản phẩm: " + item.getProduct().getId() + ", size: " + item.getSize()
-                ));
-                variant.setStockQuantity(variant.getStockQuantity() + item.getQuantity());
-                variantsToUpdate.add(variant);
-            });
-
-            productSizeRepository.saveAll(variantsToUpdate);
-        }
-
-        order.setStatus(OrderStatus.CANCELED);
-        return OrderResponse.fromEntity(orderRepository.save(order));
-    }
-
-    @Override
-    @Transactional
-    @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
-    public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
-        order.setStatus(newStatus);
-        Hibernate.initialize(order.getOrderItems());
-        return OrderResponse.fromEntity(orderRepository.save(order));
-    }
-
-    @Override
-    @Transactional
-    @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
-    public OrderResponse addTrackingNumber(Long orderId, String trackingNumber) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
-        order.setTrackingNumber(trackingNumber);
-        if (order.getStatus() == OrderStatus.PROCESSING) {
-            order.setStatus(OrderStatus.SHIPPED);
-        }
-        Hibernate.initialize(order.getOrderItems());
-        return OrderResponse.fromEntity(orderRepository.save(order));
-    }
 
     @Override
     @Transactional(readOnly = true)
@@ -293,73 +259,308 @@ public class OrderServiceImpl implements OrderService {
         return PageResponse.fromPage(orders.map(OrderResponse::fromEntity));
     }
 
+
+    // Validation helper (unchanged)
+    private void validateTransition(Order order, OrderStatus newStatus, PaymentStatus newPaymentStatus) {
+        try {
+            if (newStatus != null) {
+                order.getStatus().canTransitionTo(newStatus, order.getPaymentMethod(), order.getPaymentStatus());
+            }
+            if (newPaymentStatus != null) {
+                if (!isValidPaymentTransition(order.getPaymentStatus(), newPaymentStatus)) {
+                    throw new InvalidOrderTransitionException("Invalid payment transition to " + newPaymentStatus);
+                }
+            }
+        } catch (InvalidOrderTransitionException e) {
+            log.warn("Flow violation for order {}: {}", order.getId(), e.getMessage());
+            throw e;
+        }
+    }
+
+    private boolean isValidPaymentTransition(PaymentStatus current, PaymentStatus next) {
+        boolean valid = switch (next) {
+            case PAID -> current == PaymentStatus.PENDING;
+            case CANCELLED -> current == PaymentStatus.PENDING || current == PaymentStatus.PAID;
+            case REFUNDED -> current == PaymentStatus.PAID;
+            default -> false;
+        };
+        if (!valid) {
+            throw new InvalidOrderTransitionException("Invalid payment transition from " + current + " to " + next);
+        }
+        return valid;
+    }
+
+    // 3. UPDATE STATUS (Generic, uses validation)
+    @Override
+    @Transactional
+    @CacheEvict(value = {"userOrders", "allOrders"}, allEntries = true)
+    public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
+        try {
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+
+            // FIX: Auto-confirm COD payment if transitioning DELIVERED -> COMPLETED and PENDING
+            if (order.getStatus() == OrderStatus.DELIVERED && newStatus == OrderStatus.COMPLETED &&
+                    order.getPaymentMethod() == PaymentMethod.COD && order.getPaymentStatus() == PaymentStatus.PENDING) {
+                order.setPaymentStatus(PaymentStatus.PAID);
+                log.info("Auto-confirmed COD payment for order {} during status update to COMPLETED", orderId);
+            }
+
+            validateTransition(order, newStatus, null);
+            order.setStatus(newStatus);
+            Hibernate.initialize(order.getOrderItems());
+            return OrderResponse.fromEntity(orderRepository.save(order));
+        } catch (InvalidOrderTransitionException e) {
+            log.error("Transition error for order {}: {}", orderId, e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Update status failed for order {}: {}", orderId, e.getMessage());
+            throw new RuntimeException("Lỗi cập nhật trạng thái: " + e.getMessage(), e);
+        }
+    }
+
+    // 4. CONFIRM PROCESSING (COD flow step 2)
+    // COD: Confirm processing (PENDING -> PROCESSING)
+    @Transactional
+    public OrderResponse confirmProcessing(Long orderId) {
+        try {
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+            if (order.getPaymentMethod() != PaymentMethod.COD || order.getStatus() != OrderStatus.PENDING) {
+                throw new InvalidOrderTransitionException("Chỉ xác nhận xử lý cho COD ở PENDING");
+            }
+            validateTransition(order, OrderStatus.PROCESSING, null);
+            order.setStatus(OrderStatus.PROCESSING);
+            return OrderResponse.fromEntity(orderRepository.save(order));
+        } catch (Exception e) {
+            log.error("Confirm processing failed for order {}: {}", orderId, e.getMessage());
+            throw e;
+        }
+    }
+
+    @Transactional
+    public OrderResponse confirmCodPayment(Long orderId) {
+        try {
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+            if (order.getPaymentMethod() != PaymentMethod.COD || order.getStatus() != OrderStatus.DELIVERED ||
+                    order.getPaymentStatus() != PaymentStatus.PENDING) {
+                throw new InvalidOrderTransitionException("Chỉ xác nhận COD payment khi DELIVERED và PENDING");
+            }
+
+            // Set PAID first
+            order.setPaymentStatus(PaymentStatus.PAID);
+
+            // Validate and set COMPLETED
+            validateTransition(order, OrderStatus.COMPLETED, null);
+            order.setStatus(OrderStatus.COMPLETED);
+            Hibernate.initialize(order.getOrderItems());
+            return OrderResponse.fromEntity(orderRepository.save(order));
+        } catch (Exception e) {
+            log.error("COD confirm error for order {}: {}", orderId, e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
+    @Transactional
+    @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
+    public OrderResponse cancelOrder(Long orderId) {
+        try {
+            User currentUser = userService.getCurrentLoggedInUser();
+            Order order = orderRepository.findByIdAndUserId(orderId, currentUser.getId())
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+
+            // Allow cancel from PENDING/WAITING/PROCESSING/SHIPPED/DELIVERED (not COMPLETED)
+            if (order.getStatus() == OrderStatus.COMPLETED) {
+                throw new InvalidOrderTransitionException("Cannot cancel completed order");
+            }
+            validateTransition(order, OrderStatus.CANCELED, PaymentStatus.CANCELLED);
+
+            restoreStock(order);
+            order.setStatus(OrderStatus.CANCELED);
+            order.setPaymentStatus(PaymentStatus.CANCELLED);
+            return OrderResponse.fromEntity(orderRepository.save(order));
+        } catch (InvalidOrderTransitionException e) {
+            log.error("Cancel flow violation for order {}: {}", orderId, e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Cancel failed for order {}: {}", orderId, e.getMessage());
+            throw e;
+        }
+    }
+
     @Override
     @Transactional
     public void handleSepayWebhook(SepayWebhookRequest webhook) {
-        log.info("Processing webhook: sepayTransactionId={}, referenceCode={}, content='{}', amount={}, type={}",
-                webhook.getId(), webhook.getReferenceCode(), webhook.getContent(), webhook.getTransferAmount(), webhook.getTransferType());
-
-        // Only process incoming transfers
-        if (!"in".equalsIgnoreCase(webhook.getTransferType())) {
-            log.info("Ignoring non-incoming transfer: type={}, SepayTransactionId={}", webhook.getTransferType(), webhook.getId());
-            return;
-        }
-
-        // Lưu transaction (sẽ throw nếu duplicate)
-        Transaction tx;
         try {
-            tx = transactionService.saveFromWebhook(webhook);
-            log.info("Saved transaction: id={}, amountIn={}", tx.getId(), tx.getAmountIn());
-        } catch (IllegalStateException e) {
-            log.warn("Duplicate transaction ignored: {}", e.getMessage());
-            return;  // Không throw, chỉ log để SePay không retry vô tận
+            log.info("Processing webhook: id={}, amount={}, type={}", webhook.getId(), webhook.getTransferAmount(), webhook.getTransferType());
+
+            if (!"in".equalsIgnoreCase(webhook.getTransferType())) {
+                log.info("Ignoring non-incoming transfer");
+                return;
+            }
+
+            Transaction tx;
+            try {
+                tx = transactionService.saveFromWebhook(webhook);
+            } catch (IllegalStateException e) {
+                log.warn("Duplicate tx ignored: {}", e.getMessage());
+                return;
+            }
+
+            String content = webhook.getContent() != null ? webhook.getContent().trim() : "";
+            if (content.isBlank()) {
+                log.warn("Empty content, skipping");
+                return;
+            }
+
+            Pattern pattern = Pattern.compile("\\bDH\\s*(\\d+)\\b", Pattern.CASE_INSENSITIVE);
+            Matcher matcher = pattern.matcher(content);
+            if (!matcher.find()) {
+                log.warn("No DH code in content: '{}'", content);
+                return;
+            }
+
+            Long orderId;
+            try {
+                orderId = Long.valueOf(matcher.group(1));
+            } catch (NumberFormatException e) {
+                log.error("Parse error for content '{}': {}", content, e.getMessage());
+                return;
+            }
+
+            Optional<Order> optionalOrder = orderRepository.findByIdAndTotalAmountAndPaymentStatus(
+                    orderId, webhook.getTransferAmount(), PaymentStatus.PENDING);
+            if (optionalOrder.isEmpty()) {
+                log.warn("No matching order: id={}, amount={}", orderId, webhook.getTransferAmount());
+                return;
+            }
+
+            Order order = optionalOrder.get();
+            if (order.getPaymentStatus() == PaymentStatus.PAID) {
+                log.info("Order {} already PAID", orderId);
+                return;
+            }
+
+            // FIX: Set PAID first
+            order.setPaymentStatus(PaymentStatus.PAID);
+
+            // Then validate PROCESSING (uses new PAID)
+            validateTransition(order, OrderStatus.PROCESSING, null);
+            order.setStatus(OrderStatus.PROCESSING);
+            orderRepository.save(order);
+            log.info("SUCCESS: Updated order {} to PAID/PROCESSING via webhook", orderId);
+        } catch (InvalidOrderTransitionException e) {
+            log.warn("Webhook flow violation: {}", e.getMessage());
+        } catch (Exception e) {
+            log.error("Webhook error: {}", e.getMessage(), e);
+            throw e;
         }
+    }
 
-        // Regex tìm mã đơn hàng DH123 (flexible: trim space, case-insensitive)
-        String content = webhook.getContent() != null ? webhook.getContent().trim() : "";
-        if (content.isBlank()) {
-            log.warn("Webhook content empty, skipping. SepayTransactionId={}", webhook.getId());
-            return;
-        }
-
-        Pattern pattern = Pattern.compile("\\bDH\\s*(\\d+)\\b", Pattern.CASE_INSENSITIVE);  // Fix: \b word boundary, \s* cho space
-        Matcher matcher = pattern.matcher(content);
-
-        if (!matcher.find()) {
-            log.warn("No order code found in content: '{}'. SepayTransactionId={}", content, webhook.getId());
-            return;
-        }
-
-        Long orderId;
+    // 8. SCHEDULER: Timeout WAITING_FOR_PAYMENT >24h (SEPAY flow cancel)
+    @Scheduled(fixedRate = 3600000)  // Hourly
+    @Transactional
+    public void timeoutWaitingOrders() {
         try {
-            orderId = Long.valueOf(matcher.group(1));
-            log.info("Extracted orderId: {} from content", orderId);
-        } catch (NumberFormatException e) {
-            log.error("Failed to parse orderId from '{}': {}", content, e.getMessage());
-            return;
+            LocalDateTime threshold = LocalDateTime.now().minusHours(WAITING_TIMEOUT_HOURS);
+            List<Order> waitingOrders = orderRepository.findByStatusAndCreatedAtBeforeAndPaymentMethod(
+                    OrderStatus.WAITING_FOR_PAYMENT, threshold, PaymentMethod.SEPAY);
+            for (Order order : waitingOrders) {
+                try {
+                    validateTransition(order, OrderStatus.CANCELED, PaymentStatus.CANCELLED);
+                    order.setStatus(OrderStatus.CANCELED);
+                    order.setPaymentStatus(PaymentStatus.CANCELLED);
+                    restoreStock(order);
+                    orderRepository.save(order);
+                    log.info("Timed out order: {}", order.getId());
+                } catch (Exception e) {
+                    log.error("Failed to timeout order {}: {}", order.getId(), e.getMessage());
+                    // Continue next
+                }
+            }
+        } catch (Exception e) {
+            log.error("Scheduler timeoutWaitingOrders failed: {}", e.getMessage());
+            // No throw - keep app running
         }
+    }
 
-        // Tìm order: ID + total exact match + status phù hợp (PENDING hoặc WAITING_FOR_PAYMENT)
-        Optional<Order> optionalOrder = orderRepository.findByIdAndTotalAmountAndPaymentStatus(
-                orderId, webhook.getTransferAmount(), PaymentStatus.PENDING);  // Hoặc add overload cho WAITING_FOR_PAYMENT nếu cần
-        if (optionalOrder.isEmpty()) {
-            log.warn("No matching order: id={}, amount={}, status=PENDING. SepayTransactionId={}",
-                    orderId, webhook.getTransferAmount(), webhook.getId());
-            return;
+    // 9. SCHEDULER: Auto COMPLETE DELIVERED >7 days
+    @Scheduled(cron = "0 0 0 * * ?")  // Daily midnight
+    @Transactional
+    public void completeOldDeliveredOrders() {
+        try {
+            LocalDateTime threshold = LocalDateTime.now().minusDays(COMPLETE_AFTER_DAYS);
+            List<Order> deliveredOrders = orderRepository.findByStatusAndCreatedAtBefore(OrderStatus.DELIVERED, threshold);
+            for (Order order : deliveredOrders) {
+                try {
+                    if (order.getStatus().canTransitionTo(OrderStatus.COMPLETED, order.getPaymentMethod(), order.getPaymentStatus())) {
+                        order.setStatus(OrderStatus.COMPLETED);
+                        orderRepository.save(order);
+                        log.info("Auto-completed order: {}", order.getId());
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to complete order {}: {}", order.getId(), e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.error("Scheduler completeOldDeliveredOrders failed: {}", e.getMessage());
         }
+    }
 
-        Order order = optionalOrder.get();
-
-        // Double-check status (chỉ update nếu chưa PAID)
-        if (order.getPaymentStatus() == PaymentStatus.PAID) {
-            log.info("Order {} already PAID, skipping. SepayTransactionId={}", orderId, webhook.getId());
-            return;
+    // 10. HELPER: Restore Stock (Safe with error handling)
+    private void restoreStock(Order order) {
+        try {
+            if (!CollectionUtils.isEmpty(order.getOrderItems())) {
+                List<ProductSize> variantsToUpdate = new ArrayList<>();
+                for (OrderItem item : order.getOrderItems()) {
+                    ProductSize variant = productSizeRepository.findByProductIdAndSize(
+                                    item.getProduct().getId(), item.getSize())
+                            .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm"));
+                    variant.setStockQuantity(variant.getStockQuantity() + item.getQuantity());
+                    variantsToUpdate.add(variant);
+                }
+                productSizeRepository.saveAll(variantsToUpdate);
+                log.info("Restored stock for canceled order: {}", order.getId());
+            }
+        } catch (Exception e) {
+            log.error("Failed to restore stock for order {}: {}", order.getId(), e.getMessage());
+            throw new RuntimeException("Lỗi khôi phục tồn kho: " + e.getMessage(), e);
         }
+    }
 
-        // Update
-        order.setPaymentStatus(PaymentStatus.PAID);
-        order.setStatus(OrderStatus.PROCESSING);  // Hoặc PENDING nếu COD, nhưng SEPAY → PROCESSING
-        orderRepository.save(order);
-        log.info("SUCCESS: Updated order {} to PAID/PROCESSING. SepayTransactionId={}", orderId, webhook.getId());
+    // Existing: addTrackingNumber (add validate if needed: e.g., from PROCESSING -> SHIPPED)
+    @Override
+    @Transactional
+    @CacheEvict(value = {"userOrders", "allOrders"}, allEntries = true)
+    public OrderResponse addTrackingNumber(Long orderId, String trackingNumber) {
+        try {
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+            if (!StringUtils.hasText(trackingNumber)) {
+                throw new IllegalArgumentException("Tracking number required");
+            }
+            order.setTrackingNumber(trackingNumber);
+            if (order.getStatus() == OrderStatus.PROCESSING) {
+                validateTransition(order, OrderStatus.SHIPPED, null);
+                order.setStatus(OrderStatus.SHIPPED);
+            }
+            Hibernate.initialize(order.getOrderItems());
+            return OrderResponse.fromEntity(orderRepository.save(order));
+        } catch (Exception e) {
+            log.error("Add tracking failed for order {}: {}", orderId, e.getMessage());
+            throw e;
+        }
+    }
+
+
+
+    @Override
+    public List<OrderResponse> getOrdersByUser(Long userId) {
+        List<Order> orders = orderRepository.findByUserId(userId);
+        return orders.stream()
+                .map(OrderResponse::fromEntity)
+                .collect(Collectors.toList());
     }
 }

@@ -9,6 +9,8 @@ import com.sprotshop.sportstore.Enum.OrderStatus;
 import com.sprotshop.sportstore.response.PageResponse;
 import org.springframework.data.domain.Pageable;
 
+import java.util.List;
+
 public interface OrderService {
     OrderResponse createOrderFromCart(CreateOrderRequest request);
 
@@ -30,4 +32,10 @@ public interface OrderService {
     PageResponse<OrderResponse> searchOrders(OrderSearchRequest request, Pageable pageable);
 
     void handleSepayWebhook(SepayWebhookRequest webhook);
+
+    OrderResponse confirmCodPayment(Long orderId);
+
+    OrderResponse confirmProcessing(Long orderId);
+
+    List<OrderResponse> getOrdersByUser(Long userId);
 }

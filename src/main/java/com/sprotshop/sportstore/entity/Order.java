@@ -53,6 +53,10 @@ public class Order {
     @Enumerated(EnumType.STRING)
     private PaymentStatus paymentStatus;
 
+    @Column(name="order_status")
+    @Enumerated(EnumType.STRING)
+    private OrderStatus orderStatus;
+
     private String trackingNumber;
     private String notes;
 
