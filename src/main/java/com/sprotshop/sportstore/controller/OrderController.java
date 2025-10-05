@@ -7,6 +7,7 @@ import com.sprotshop.sportstore.Enum.PaymentMethod;
 import com.sprotshop.sportstore.Enum.PaymentStatus;
 import com.sprotshop.sportstore.entity.Order;
 import com.sprotshop.sportstore.entity.User;
+import com.sprotshop.sportstore.exception.InvalidOrderTransitionException;
 import com.sprotshop.sportstore.repository.OrderRepository;
 import com.sprotshop.sportstore.request.CreateOrderRequest;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
@@ -36,6 +37,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -187,6 +189,12 @@ public class OrderController {
                             .message(e.getMessage())
                             .status(HttpStatus.NOT_FOUND.value())
                             .build());
+        } catch (InvalidOrderTransitionException e) {  // Handle flow errors as 409
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.<OrderResponse>builder()
+                            .message("Lỗi flow: " + e.getMessage())
+                            .status(HttpStatus.CONFLICT.value())
+                            .build());
         }
     }
 
@@ -323,54 +331,84 @@ public class OrderController {
 
     @PostMapping("/sepay-webhook")
     public ResponseEntity<ApiResponse<String>> handleSepayWebhook(@RequestBody SepayWebhookRequest webhook) {
-        log.info("Webhook nhận từ SEPAY: {}", webhook);
-        orderService.handleSepayWebhook(webhook);
-        return ResponseEntity.ok(ApiResponse.<String>builder()
-                .status(HttpStatus.OK.value())
-                .message("Webhook processed")
-                .build());
+        try {
+            log.info("Webhook nhận từ SEPAY: {}", webhook);
+            orderService.handleSepayWebhook(webhook);
+            return ResponseEntity.ok(ApiResponse.<String>builder()
+                    .status(HttpStatus.OK.value())
+                    .message("Webhook processed")
+                    .build());
+        } catch (Exception e) {
+            log.warn("Webhook processed with warning: {}", e.getMessage());  // Always 200 for idempotency
+            return ResponseEntity.ok(ApiResponse.<String>builder()
+                    .status(HttpStatus.OK.value())
+                    .message("Webhook received")
+                    .build());
+        }
     }
 
+
+    // COD: Confirm processing (PENDING -> PROCESSING)
+    @PutMapping("/admin/{orderId}/confirm-processing")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<OrderResponse>> confirmProcessing(@PathVariable Long orderId) {
+        try {
+            OrderResponse order = orderService.confirmProcessing(orderId);
+            return ResponseEntity.ok(ApiResponse.<OrderResponse>builder()
+                    .message("Xác nhận xử lý đơn hàng COD thành công")
+                    .data(order)
+                    .status(HttpStatus.OK.value())
+                    .build());
+        } catch (InvalidOrderTransitionException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.<OrderResponse>builder()
+                            .message("Lỗi flow: " + e.getMessage())
+                            .status(HttpStatus.CONFLICT.value())
+                            .build());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.<OrderResponse>builder()
+                            .message("Không thể xác nhận xử lý đơn")
+                            .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                            .build());
+        }
+    }
+
+    // Existing/Enhanced: confirmCodPayment
+    // COD: Confirm payment (DELIVERED -> PAID + COMPLETED)
     @PutMapping("/admin/{orderId}/confirm-cod-payment")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<OrderResponse>> confirmCodPayment(@PathVariable Long orderId) {
         try {
-            Order order = orderRepository.findById(orderId)
-                    .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
-
-            if (order.getPaymentMethod() != PaymentMethod.COD) {
-                return ResponseEntity.badRequest()
-                        .body(ApiResponse.<OrderResponse>builder()
-                                .message("Đơn hàng không sử dụng phương thức COD")
-                                .status(HttpStatus.BAD_REQUEST.value())
-                                .build());
-            }
-
-            if (order.getStatus() != OrderStatus.DELIVERED) {
-                return ResponseEntity.badRequest()
-                        .body(ApiResponse.<OrderResponse>builder()
-                                .message("Đơn hàng COD chỉ có thể xác nhận thanh toán khi đã giao hàng")
-                                .status(HttpStatus.BAD_REQUEST.value())
-                                .build());
-            }
-
-            order.setPaymentStatus(PaymentStatus.PAID);
-            order.setStatus(OrderStatus.COMPLETED);
-            Hibernate.initialize(order.getOrderItems());
-            OrderResponse response = OrderResponse.fromEntity(orderRepository.save(order));
-
+            OrderResponse order = orderService.confirmCodPayment(orderId);
             return ResponseEntity.ok(ApiResponse.<OrderResponse>builder()
                     .message("Xác nhận thanh toán COD thành công")
-                    .data(response)
+                    .data(order)
                     .status(HttpStatus.OK.value())
                     .build());
-        } catch (NotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+        } catch (InvalidOrderTransitionException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ApiResponse.<OrderResponse>builder()
-                            .message(e.getMessage())
-                            .status(HttpStatus.NOT_FOUND.value())
+                            .message("Lỗi flow: " + e.getMessage())
+                            .status(HttpStatus.CONFLICT.value())
+                            .build());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.<OrderResponse>builder()
+                            .message("Không thể xác nhận thanh toán COD")
+                            .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                             .build());
         }
+    }
+
+    // GET /api/orders/user/{userId}
+    @GetMapping("/user/{userId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<OrderResponse>>> getOrdersByUser(@PathVariable Long userId) {
+        List<OrderResponse> orders = orderService.getOrdersByUser(userId);
+        return ResponseEntity.ok(
+                ApiResponse.success("Lấy danh sách đơn hàng theo id người dùng thành công", orders)
+        );
     }
 }
 

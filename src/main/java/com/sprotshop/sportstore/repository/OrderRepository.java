@@ -2,6 +2,7 @@
 package com.sprotshop.sportstore.repository;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
+import com.sprotshop.sportstore.Enum.PaymentMethod;
 import com.sprotshop.sportstore.Enum.PaymentStatus;
 import com.sprotshop.sportstore.entity.Order;
 import io.lettuce.core.dynamic.annotation.Param;
@@ -13,6 +14,7 @@ import org.springframework.data.jpa.repository.Query;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -82,4 +84,16 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
 
     // Trong com.sprotshop.sportstore.repository.OrderRepository extends JpaRepository<Order, Long>
     Optional<Order> findByIdAndTotalAmountAndPaymentStatus(Long id, BigDecimal totalAmount, PaymentStatus paymentStatus);
+
+    // New: For schedulers (find old orders by status/time/method)
+    @Query("SELECT o FROM Order o WHERE o.status = :status AND o.createdAt < :threshold")
+    List<Order> findByStatusAndCreatedAtBefore(@Param("status") OrderStatus status, @Param("threshold") LocalDateTime threshold);
+
+    @Query("SELECT o FROM Order o WHERE o.status = :status AND o.createdAt < :threshold AND o.paymentMethod = :method")
+    List<Order> findByStatusAndCreatedAtBeforeAndPaymentMethod(@Param("status") OrderStatus status,
+                                                               @Param("threshold") LocalDateTime threshold,
+                                                               @Param("method") PaymentMethod method);
+
+    List<Order> findByUserId(Long user_id);
+
 }

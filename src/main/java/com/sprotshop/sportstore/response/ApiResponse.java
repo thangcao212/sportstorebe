@@ -20,4 +20,21 @@ public class ApiResponse<T> {
     private int status;
 
     private final String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+
+    public static <T> ApiResponse<T> success(String message, T data) {
+        return ApiResponse.<T>builder()
+                .message(message)
+                .data(data)
+                .status(200)
+
+                .build();
+    }
+
+    public static <T> ApiResponse<T> error(String message, int status) {
+        return ApiResponse.<T>builder()
+                .message(message)
+                .status(status)
+
+                .build();
+    }
 }
