@@ -6,7 +6,4 @@ import com.fasterxml.jackson.annotation.JsonValue;
 public enum PaymentMethod {
     COD,
     SEPAY;
-
-
-
 }

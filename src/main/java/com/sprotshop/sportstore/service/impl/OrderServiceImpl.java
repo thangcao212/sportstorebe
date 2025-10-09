@@ -1,4 +1,5 @@
-// Updated OrderServiceImpl.java - Fixed logic in handleSepayWebhook to only process "in" transfers, compare with amountIn logic, and ensure status checks align with original demo
+// Updated OrderServiceImpl.java - Changed SEPAY timeout from 24 hours to 5 minutes for testing.
+// Scheduler now runs every 5 minutes to check timeouts more frequently.
 package com.sprotshop.sportstore.service.impl;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
@@ -65,7 +66,7 @@ public class OrderServiceImpl implements OrderService {
     private final TransactionRepository transactionRepository;
     private final TransactionService transactionService;
 
-    private static final long WAITING_TIMEOUT_HOURS = 24;
+    private static final long WAITING_TIMEOUT_MINUTES = 5;  // 5 minutes for testing SEPAY
     private static final long COMPLETE_AFTER_DAYS = 7;
 
 
@@ -75,136 +76,136 @@ public class OrderServiceImpl implements OrderService {
     @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
     public OrderResponse createOrderFromCart(CreateOrderRequest request) {
         try{
-        User currentUser = userService.getCurrentLoggedInUser();
-        Long userId = currentUser.getId();
-        log.info("Creating order for userId: {}", userId);
+            User currentUser = userService.getCurrentLoggedInUser();
+            Long userId = currentUser.getId();
+            log.info("Creating order for userId: {}", userId);
 
-        Province province = provinceRepository.findById(request.getProvinceCode())
-                .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ: " + request.getProvinceCode()));
-        District district = districtRepository.findById(request.getDistrictCode())
-                .orElseThrow(() -> new NotFoundException("Mã huyện không hợp lệ: " + request.getDistrictCode()));
-        Ward ward = wardRepository.findById(request.getWardCode())
-                .orElseThrow(() -> new NotFoundException("Mã xã không hợp lệ: " + request.getWardCode()));
+            Province province = provinceRepository.findById(request.getProvinceCode())
+                    .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ: " + request.getProvinceCode()));
+            District district = districtRepository.findById(request.getDistrictCode())
+                    .orElseThrow(() -> new NotFoundException("Mã huyện không hợp lệ: " + request.getDistrictCode()));
+            Ward ward = wardRepository.findById(request.getWardCode())
+                    .orElseThrow(() -> new NotFoundException("Mã xã không hợp lệ: " + request.getWardCode()));
 
-        Cart cart = cartRepository.findByUserId(userId)
-                .orElseThrow(() -> new NotFoundException("Không tìm thấy giỏ hàng cho user ID: " + userId));
+            Cart cart = cartRepository.findByUserId(userId)
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy giỏ hàng cho user ID: " + userId));
 
-        if (CollectionUtils.isEmpty(cart.getCartItems())) {
-            throw new IllegalStateException("Giỏ hàng trống");
-        }
+            if (CollectionUtils.isEmpty(cart.getCartItems())) {
+                throw new IllegalStateException("Giỏ hàng trống");
+            }
 
-        Map<String, Integer> productSizeQuantityMap = new HashMap<>();
-        Map<String, BigDecimal> priceAtOrderMap = new HashMap<>();
-        BigDecimal totalAmount = BigDecimal.ZERO;
-        Map<String, Integer> stockUpdates = new HashMap<>();
+            Map<String, Integer> productSizeQuantityMap = new HashMap<>();
+            Map<String, BigDecimal> priceAtOrderMap = new HashMap<>();
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            Map<String, Integer> stockUpdates = new HashMap<>();
 
-        for (CartItem cartItem : cart.getCartItems()) {
-            try {
-                Product product = cartItem.getProduct();
-                String size = cartItem.getSize();
-                int quantity = cartItem.getQuantity();
-                String productSizeKey = product.getId() + "-" + size;
+            for (CartItem cartItem : cart.getCartItems()) {
+                try {
+                    Product product = cartItem.getProduct();
+                    String size = cartItem.getSize();
+                    int quantity = cartItem.getQuantity();
+                    String productSizeKey = product.getId() + "-" + size;
 
-                ProductSize variant = productSizeRepository.findByProductIdAndSize(product.getId(), size)
-                        .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + product.getId() + ", size: " + size));
-                if (variant.getStockQuantity() < quantity) {
-                    throw new IllegalStateException("Sản phẩm hết hàng cho kích thước " + size + ": " + product.getName());
+                    ProductSize variant = productSizeRepository.findByProductIdAndSize(product.getId(), size)
+                            .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + product.getId() + ", size: " + size));
+                    if (variant.getStockQuantity() < quantity) {
+                        throw new IllegalStateException("Sản phẩm hết hàng cho kích thước " + size + ": " + product.getName());
+                    }
+
+                    BigDecimal price = BigDecimal.valueOf(product.getPrice());
+                    productSizeQuantityMap.put(productSizeKey, quantity);
+                    priceAtOrderMap.put(productSizeKey, price);
+                    totalAmount = totalAmount.add(price.multiply(BigDecimal.valueOf(quantity)));
+                    stockUpdates.put(productSizeKey, quantity);
+                } catch (NotFoundException | IllegalStateException e) {
+                    log.warn("Stock check failed for cartItem {}: {}", cartItem.getId(), e.getMessage());
+                    throw e;  // Fail fast
                 }
-
-                BigDecimal price = BigDecimal.valueOf(product.getPrice());
-                productSizeQuantityMap.put(productSizeKey, quantity);
-                priceAtOrderMap.put(productSizeKey, price);
-                totalAmount = totalAmount.add(price.multiply(BigDecimal.valueOf(quantity)));
-                stockUpdates.put(productSizeKey, quantity);
-            } catch (NotFoundException | IllegalStateException e) {
-                log.warn("Stock check failed for cartItem {}: {}", cartItem.getId(), e.getMessage());
-                throw e;  // Fail fast
             }
-        }
 
-        String fullAddress = String.format("%s, %s, %s, %s", request.getStreet(), ward.getName(), district.getName(), province.getName());
-        Address address = Address.builder()
-                .provinceCode(request.getProvinceCode())
-                .districtCode(request.getDistrictCode())
-                .wardCode(request.getWardCode())
-                .street(request.getStreet())
-                .fullAddress(fullAddress)
-                .build();
-        addressRepository.save(address);
+            String fullAddress = String.format("%s, %s, %s, %s", request.getStreet(), ward.getName(), district.getName(), province.getName());
+            Address address = Address.builder()
+                    .provinceCode(request.getProvinceCode())
+                    .districtCode(request.getDistrictCode())
+                    .wardCode(request.getWardCode())
+                    .street(request.getStreet())
+                    .fullAddress(fullAddress)
+                    .build();
+            addressRepository.save(address);
 
-        // Gán trạng thái dựa trên paymentMethod
-        // Set initial status based on flow
-        OrderStatus initialStatus = (request.getPaymentMethod() == PaymentMethod.SEPAY)
-                ? OrderStatus.WAITING_FOR_PAYMENT : OrderStatus.PENDING;
-        PaymentStatus initialPaymentStatus = PaymentStatus.PENDING;
+            // Gán trạng thái dựa trên paymentMethod
+            // Set initial status based on flow
+            OrderStatus initialStatus = (request.getPaymentMethod() == PaymentMethod.SEPAY)
+                    ? OrderStatus.WAITING_FOR_PAYMENT : OrderStatus.PENDING;
+            PaymentStatus initialPaymentStatus = PaymentStatus.PENDING;
 
-        Order order = Order.builder()
-                .user(currentUser)
-                .address(address)
-                .totalAmount(totalAmount)
-                .status(initialStatus)
-                .paymentMethod(request.getPaymentMethod())
-                .paymentStatus(initialPaymentStatus)
+            Order order = Order.builder()
+                    .user(currentUser)
+                    .address(address)
+                    .totalAmount(totalAmount)
+                    .status(initialStatus)
+                    .paymentMethod(request.getPaymentMethod())
+                    .paymentStatus(initialPaymentStatus)
 
-                .shippingRecipientName(request.getRecipientName())
-                .shippingPhone(request.getPhone())
-                .notes(request.getNotes())
-                .orderItems(new ArrayList<>())
-                .build();
-        Order savedOrder = orderRepository.save(order);
-        try {
-            List<OrderItem> orderItems = new ArrayList<>();
-            for (Map.Entry<String, Integer> entry : productSizeQuantityMap.entrySet()) {
-                String[] parts = entry.getKey().split("-");
-                Long productId = Long.parseLong(parts[0]);
-                String size = parts[1];
-                Product product = productRepository.findById(productId)
-                        .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm: " + productId));
+                    .shippingRecipientName(request.getRecipientName())
+                    .shippingPhone(request.getPhone())
+                    .notes(request.getNotes())
+                    .orderItems(new ArrayList<>())
+                    .build();
+            Order savedOrder = orderRepository.save(order);
+            try {
+                List<OrderItem> orderItems = new ArrayList<>();
+                for (Map.Entry<String, Integer> entry : productSizeQuantityMap.entrySet()) {
+                    String[] parts = entry.getKey().split("-");
+                    Long productId = Long.parseLong(parts[0]);
+                    String size = parts[1];
+                    Product product = productRepository.findById(productId)
+                            .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm: " + productId));
 
-                OrderItem item = OrderItem.builder()
-                        .order(savedOrder)
-                        .product(product)
-                        .quantity(entry.getValue())
-                        .price(priceAtOrderMap.get(entry.getKey()))
-                        .size(size)
-                        .build();
-                orderItems.add(item);
+                    OrderItem item = OrderItem.builder()
+                            .order(savedOrder)
+                            .product(product)
+                            .quantity(entry.getValue())
+                            .price(priceAtOrderMap.get(entry.getKey()))
+                            .size(size)
+                            .build();
+                    orderItems.add(item);
+                }
+                orderItemRepository.saveAll(orderItems);
+                savedOrder.setOrderItems(orderItems);
+
+                stockUpdates.forEach((productSizeKey, quantity) -> {
+                    String[] parts = productSizeKey.split("-");
+                    Long productId = Long.parseLong(parts[0]);
+                    String size = parts[1];
+                    ProductSize variant = productSizeRepository.findByProductIdAndSize(productId, size)
+                            .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + productId + ", size: " + size));
+                    variant.setStockQuantity(variant.getStockQuantity() - quantity);
+                    productSizeRepository.save(variant);
+                });
+
+                cartService.clearCart();
+            } catch (Exception e) {
+                log.error("Failed to save items/stock for order {}: {}", savedOrder.getId(), e.getMessage());
+                throw new RuntimeException("Lỗi lưu chi tiết đơn hàng: " + e.getMessage(), e);
             }
-            orderItemRepository.saveAll(orderItems);
-            savedOrder.setOrderItems(orderItems);
+            Hibernate.initialize(savedOrder.getOrderItems());
 
-            stockUpdates.forEach((productSizeKey, quantity) -> {
-                String[] parts = productSizeKey.split("-");
-                Long productId = Long.parseLong(parts[0]);
-                String size = parts[1];
-                ProductSize variant = productSizeRepository.findByProductIdAndSize(productId, size)
-                        .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + productId + ", size: " + size));
-                variant.setStockQuantity(variant.getStockQuantity() - quantity);
-                productSizeRepository.save(variant);
-            });
-
-            cartService.clearCart();
-        } catch (Exception e) {
-            log.error("Failed to save items/stock for order {}: {}", savedOrder.getId(), e.getMessage());
-            throw new RuntimeException("Lỗi lưu chi tiết đơn hàng: " + e.getMessage(), e);
-        }
-        Hibernate.initialize(savedOrder.getOrderItems());
-
-        OrderResponse response = OrderResponse.fromEntity(orderRepository.findById(savedOrder.getId()).orElseThrow());
-        if (request.getPaymentMethod() == PaymentMethod.SEPAY) {
-            // Thay des=DH%d bằng des=SEVQR+TKPCCT+DH%d
-            String qrUrl = String.format("https://qr.sepay.vn/img?bank=VietinBank&acc=109874753814&template=compact&amount=%d&des=SEVQR+TKPCCT+DH%d",
-                    savedOrder.getTotalAmount().longValue(), savedOrder.getId());
-            response.setQrCodeUrl(qrUrl);
-            response.setBankInfo(Map.of(
-                    "bankName", "VietinBank",
-                    "accountNumber", "109874753814",
-                    "accountHolder", "CAO CHIEN THANG",
-                    "transferContent", "SEVQR TKPCCT DH" + savedOrder.getId()  // Update content hướng dẫn
-            ));
-        }
-        return response;
-    }catch (Exception e) {
+            OrderResponse response = OrderResponse.fromEntity(orderRepository.findById(savedOrder.getId()).orElseThrow());
+            if (request.getPaymentMethod() == PaymentMethod.SEPAY) {
+                // Thay des=DH%d bằng des=SEVQR+TKPCCT+DH%d
+                String qrUrl = String.format("https://qr.sepay.vn/img?bank=VietinBank&acc=109874753814&template=compact&amount=%d&des=SEVQR+TKPCCT+DH%d",
+                        savedOrder.getTotalAmount().longValue(), savedOrder.getId());
+                response.setQrCodeUrl(qrUrl);
+                response.setBankInfo(Map.of(
+                        "bankName", "VietinBank",
+                        "accountNumber", "109874753814",
+                        "accountHolder", "CAO CHIEN THANG",
+                        "transferContent", "SEVQR TKPCCT DH" + savedOrder.getId()  // Update content hướng dẫn
+                ));
+            }
+            return response;
+        }catch (Exception e) {
             log.error("Create order failed: {}", e.getMessage(), e);
             throw e;  // Propagate to controller
         }
@@ -304,6 +305,13 @@ public class OrderServiceImpl implements OrderService {
                     order.getPaymentMethod() == PaymentMethod.COD && order.getPaymentStatus() == PaymentStatus.PENDING) {
                 order.setPaymentStatus(PaymentStatus.PAID);
                 log.info("Auto-confirmed COD payment for order {} during status update to COMPLETED", orderId);
+            }
+
+            // NEW FIX: Auto-confirm SEPAY payment if transitioning WAITING_FOR_PAYMENT -> PROCESSING and PENDING
+            if (order.getStatus() == OrderStatus.WAITING_FOR_PAYMENT && newStatus == OrderStatus.PROCESSING &&
+                    order.getPaymentMethod() == PaymentMethod.SEPAY && order.getPaymentStatus() == PaymentStatus.PENDING) {
+                order.setPaymentStatus(PaymentStatus.PAID);
+                log.info("Auto-confirmed SEPAY payment for order {} during status update to PROCESSING", orderId);
             }
 
             validateTransition(order, newStatus, null);
@@ -459,55 +467,8 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    // 8. SCHEDULER: Timeout WAITING_FOR_PAYMENT >24h (SEPAY flow cancel)
-    @Scheduled(fixedRate = 3600000)  // Hourly
-    @Transactional
-    public void timeoutWaitingOrders() {
-        try {
-            LocalDateTime threshold = LocalDateTime.now().minusHours(WAITING_TIMEOUT_HOURS);
-            List<Order> waitingOrders = orderRepository.findByStatusAndCreatedAtBeforeAndPaymentMethod(
-                    OrderStatus.WAITING_FOR_PAYMENT, threshold, PaymentMethod.SEPAY);
-            for (Order order : waitingOrders) {
-                try {
-                    validateTransition(order, OrderStatus.CANCELED, PaymentStatus.CANCELLED);
-                    order.setStatus(OrderStatus.CANCELED);
-                    order.setPaymentStatus(PaymentStatus.CANCELLED);
-                    restoreStock(order);
-                    orderRepository.save(order);
-                    log.info("Timed out order: {}", order.getId());
-                } catch (Exception e) {
-                    log.error("Failed to timeout order {}: {}", order.getId(), e.getMessage());
-                    // Continue next
-                }
-            }
-        } catch (Exception e) {
-            log.error("Scheduler timeoutWaitingOrders failed: {}", e.getMessage());
-            // No throw - keep app running
-        }
-    }
 
-    // 9. SCHEDULER: Auto COMPLETE DELIVERED >7 days
-    @Scheduled(cron = "0 0 0 * * ?")  // Daily midnight
-    @Transactional
-    public void completeOldDeliveredOrders() {
-        try {
-            LocalDateTime threshold = LocalDateTime.now().minusDays(COMPLETE_AFTER_DAYS);
-            List<Order> deliveredOrders = orderRepository.findByStatusAndCreatedAtBefore(OrderStatus.DELIVERED, threshold);
-            for (Order order : deliveredOrders) {
-                try {
-                    if (order.getStatus().canTransitionTo(OrderStatus.COMPLETED, order.getPaymentMethod(), order.getPaymentStatus())) {
-                        order.setStatus(OrderStatus.COMPLETED);
-                        orderRepository.save(order);
-                        log.info("Auto-completed order: {}", order.getId());
-                    }
-                } catch (Exception e) {
-                    log.error("Failed to complete order {}: {}", order.getId(), e.getMessage());
-                }
-            }
-        } catch (Exception e) {
-            log.error("Scheduler completeOldDeliveredOrders failed: {}", e.getMessage());
-        }
-    }
+
 
     // 10. HELPER: Restore Stock (Safe with error handling)
     private void restoreStock(Order order) {
@@ -562,5 +523,106 @@ public class OrderServiceImpl implements OrderService {
         return orders.stream()
                 .map(OrderResponse::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+
+    @Override
+    public List<Map<String, String>> getUniqueUserEmails() {
+        try {
+            List<String> emails = orderRepository.findUniqueUserEmails(); // Gọi repo
+            return emails.stream()
+                    .map(email -> Map.of("value", email, "label", email)) // Format cho Select
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("Failed to fetch unique emails: {}", e.getMessage());
+            return List.of(); // Trả empty nếu lỗi
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<OrderStatus> getPossibleNextStatuses(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+        return order.getStatus().getPossibleNextStates(order.getPaymentMethod(), order.getPaymentStatus());
+    }
+
+    // ENHANCED: Scheduler for SEPAY timeout - Added detailed logging for stuck test orders
+    @Scheduled(fixedRate = 300000)  // Every 5 minutes
+    @Transactional
+    public void timeoutWaitingOrders() {
+        try {
+            LocalDateTime threshold = LocalDateTime.now().minusMinutes(WAITING_TIMEOUT_MINUTES);
+            // Filter only SEPAY orders in WAITING_FOR_PAYMENT with PENDING payment
+            List<Order> waitingOrders = orderRepository.findByStatusAndCreatedAtBeforeAndPaymentMethodAndPaymentStatus(
+                    OrderStatus.WAITING_FOR_PAYMENT, threshold, PaymentMethod.SEPAY, PaymentStatus.PENDING);
+
+            if (waitingOrders.isEmpty()) {
+                log.debug("No stuck SEPAY orders found for timeout.");
+                return;
+            }
+
+            log.info("Found {} stuck SEPAY orders (WAITING_FOR_PAYMENT > {} min) for auto-cancel.", waitingOrders.size(), WAITING_TIMEOUT_MINUTES);
+
+            for (Order order : waitingOrders) {
+                try {
+                    // Validate transition (should always pass for this case)
+                    order.getStatus().canTransitionTo(OrderStatus.CANCELED, order.getPaymentMethod(), order.getPaymentStatus());
+
+                    // Set statuses
+                    order.setStatus(OrderStatus.CANCELED);
+                    order.setPaymentStatus(PaymentStatus.CANCELLED);
+
+                    // Restore stock
+                    restoreStock(order);
+
+                    orderRepository.save(order);
+
+                    log.warn("Auto-canceled stuck SEPAY order {} (created at {}): Timeout after {} minutes. Restored stock.",
+                            order.getId(), order.getCreatedAt(), WAITING_TIMEOUT_MINUTES);
+                } catch (Exception e) {
+                    log.error("Failed to auto-cancel stuck SEPAY order {}: {}", order.getId(), e.getMessage(), e);
+                    // Continue with next order
+                }
+            }
+
+            log.info("Processed {} stuck SEPAY orders. Check logs for details.", waitingOrders.size());
+        } catch (Exception e) {
+            log.error("Scheduler timeoutWaitingOrders failed: {}", e.getMessage(), e);
+            // No throw - keep app running
+        }
+    }
+
+    // ENHANCED: Auto-complete scheduler - Also log for old DELIVERED orders
+    @Scheduled(cron = "0 0 0 * * ?")  // Daily midnight
+    @Transactional
+    public void completeOldDeliveredOrders() {
+        try {
+            LocalDateTime threshold = LocalDateTime.now().minusDays(COMPLETE_AFTER_DAYS);
+            List<Order> deliveredOrders = orderRepository.findByStatusAndCreatedAtBefore(OrderStatus.DELIVERED, threshold);
+
+            if (deliveredOrders.isEmpty()) {
+                log.debug("No old DELIVERED orders for auto-complete.");
+                return;
+            }
+
+            log.info("Found {} old DELIVERED orders (> {} days) for auto-complete.", deliveredOrders.size(), COMPLETE_AFTER_DAYS);
+
+            for (Order order : deliveredOrders) {
+                try {
+                    if (order.getStatus().canTransitionTo(OrderStatus.COMPLETED, order.getPaymentMethod(), order.getPaymentStatus())) {
+                        order.setStatus(OrderStatus.COMPLETED);
+                        orderRepository.save(order);
+                        log.info("Auto-completed old DELIVERED order: {}", order.getId());
+                    } else {
+                        log.warn("Skipped auto-complete for order {}: Invalid transition (check payment status).", order.getId());
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to auto-complete order {}: {}", order.getId(), e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.error("Scheduler completeOldDeliveredOrders failed: {}", e.getMessage(), e);
+        }
     }
 }

@@ -85,9 +85,7 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     // Trong com.sprotshop.sportstore.repository.OrderRepository extends JpaRepository<Order, Long>
     Optional<Order> findByIdAndTotalAmountAndPaymentStatus(Long id, BigDecimal totalAmount, PaymentStatus paymentStatus);
 
-    // New: For schedulers (find old orders by status/time/method)
-    @Query("SELECT o FROM Order o WHERE o.status = :status AND o.createdAt < :threshold")
-    List<Order> findByStatusAndCreatedAtBefore(@Param("status") OrderStatus status, @Param("threshold") LocalDateTime threshold);
+
 
     @Query("SELECT o FROM Order o WHERE o.status = :status AND o.createdAt < :threshold AND o.paymentMethod = :method")
     List<Order> findByStatusAndCreatedAtBeforeAndPaymentMethod(@Param("status") OrderStatus status,
@@ -96,4 +94,19 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
 
     List<Order> findByUserId(Long user_id);
 
+    @Query("SELECT DISTINCT u.email FROM User u ORDER BY u.email")
+    List<String> findUniqueUserEmails();
+
+    // NEW: For enhanced SEPAY timeout scheduler
+    @Query("SELECT o FROM Order o WHERE o.status = :status AND o.createdAt < :threshold AND o.paymentMethod = :method AND o.paymentStatus = :paymentStatus")
+    List<Order> findByStatusAndCreatedAtBeforeAndPaymentMethodAndPaymentStatus(
+            @Param("status") OrderStatus status,
+            @Param("threshold") LocalDateTime threshold,
+            @Param("method") PaymentMethod method,
+            @Param("paymentStatus") PaymentStatus paymentStatus
+    );
+
+    // Existing findByStatusAndCreatedAtBefore for auto-complete
+    @Query("SELECT o FROM Order o WHERE o.status = :status AND o.createdAt < :threshold")
+    List<Order> findByStatusAndCreatedAtBefore(@Param("status") OrderStatus status, @Param("threshold") LocalDateTime threshold);
 }

@@ -410,6 +410,42 @@ public class OrderController {
                 ApiResponse.success("Lấy danh sách đơn hàng theo id người dùng thành công", orders)
         );
     }
+
+    @GetMapping("/unique-emails")
+    @PreAuthorize("hasRole('ADMIN')") // Chỉ admin
+    public ResponseEntity<ApiResponse<List<Map<String, String>>>> getUniqueUserEmails() {
+        List<Map<String, String>> emails = orderService.getUniqueUserEmails();
+        return ResponseEntity.ok(ApiResponse.<List<Map<String, String>>>builder()
+                .message("Unique emails fetched successfully")
+                .data(emails)
+                .status(HttpStatus.OK.value())
+                .build());
+    }
+
+    @GetMapping("/admin/{orderId}/possible-statuses")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<OrderStatus>>> getPossibleStatuses(@PathVariable Long orderId) {
+        try {
+            List<OrderStatus> possibles = orderService.getPossibleNextStatuses(orderId);
+            return ResponseEntity.ok(ApiResponse.<List<OrderStatus>>builder()
+                    .message("Possible statuses fetched")
+                    .data(possibles)
+                    .status(HttpStatus.OK.value())
+                    .build());
+        } catch (NotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.<List<OrderStatus>>builder()
+                            .message(e.getMessage())
+                            .status(HttpStatus.NOT_FOUND.value())
+                            .build());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.<List<OrderStatus>>builder()
+                            .message("Error fetching possible statuses")
+                            .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                            .build());
+        }
+    }
 }
 
 // Separate Controller for view rendering

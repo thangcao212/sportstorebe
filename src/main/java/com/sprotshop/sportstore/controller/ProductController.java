@@ -143,19 +143,7 @@ public class ProductController {
         return ResponseEntity.ok(apiResponse);
     }
 
-//    @GetMapping("/search")
-//    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_CUSTOMER')")
-//    public ResponseEntity<ApiResponse<List<ProductResponse>>> searchProductsByName(
-//            @RequestParam String name) {
-//        log.info("GET /api/products/search?name={}", name);
-//        List<ProductResponse> products = productService.searchProductsByName(name);
-//        ApiResponse<List<ProductResponse>> response = ApiResponse.<List<ProductResponse>>builder()
-//                .message("Search results for '" + name + "'")
-//                .data(products)
-//                .status(HttpStatus.OK.value())
-//                .build();
-//        return ResponseEntity.ok(response);
-//    }
+
 
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<PageResponse<ProductResponse>>> searchProducts(

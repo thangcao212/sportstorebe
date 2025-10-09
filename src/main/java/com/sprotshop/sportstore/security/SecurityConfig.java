@@ -43,6 +43,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/products/**").permitAll()
                         .requestMatchers("/api/orders/sepay-webhook").permitAll()
+                        .requestMatchers("/api/categories").permitAll()
                         .requestMatchers("/redis/**").permitAll()
                         .anyRequest().authenticated()
                 )
