@@ -17,12 +17,13 @@ public class OrderSearchRequest {
     private Double minTotalAmount;
     private Double maxTotalAmount;
     private List<OrderStatus> status;
-    private PaymentMethod  paymentMethod;
+    private List<PaymentMethod> paymentMethod;  // FIXED: Changed to List to support multiple
     private List<PaymentStatus> paymentStatus;
     private Integer provinceCode;
     private Integer districtCode;
     private Integer wardCode;
     private String search;
+    private List<String> emails; // NEW: Added for exact email filter
     private Long productId;
     private LocalDateTime startDate;
     private LocalDateTime endDate;

@@ -1,11 +1,14 @@
+// Updated OrderSpecification.java - Handle List<String> emails with IN query
 package com.sprotshop.sportstore.utils;
 
 import com.sprotshop.sportstore.entity.Address;
 import com.sprotshop.sportstore.entity.Order;
 import com.sprotshop.sportstore.entity.OrderItem;
+import com.sprotshop.sportstore.entity.User;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
 import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -50,7 +53,8 @@ public class OrderSpecification {
             if (request.getStatus() != null && !request.getStatus().isEmpty()) {
                 predicates.add(root.get("status").in(request.getStatus()));
             }
-            if(request.getPaymentMethod() != null ){
+            // PaymentMethod
+            if (request.getPaymentMethod() != null && !request.getPaymentMethod().isEmpty()) {
                 predicates.add(root.get("paymentMethod").in(request.getPaymentMethod()));
             }
 
@@ -92,6 +96,15 @@ public class OrderSpecification {
                         cb.equal(oi.get("order").get("id"), root.get("id"))
                 );
                 predicates.add(cb.exists(sub));
+            }
+
+            // Emails exact filter - CHANGED: List<String> emails with IN (case-insensitive)
+            if (request.getEmails() != null && !request.getEmails().isEmpty()) {
+                Join<Order, User> userJoin = root.join("user", JoinType.LEFT);
+                List<String> lowerEmails = request.getEmails().stream()
+                        .map(String::toLowerCase)
+                        .collect(java.util.stream.Collectors.toList());
+                predicates.add(cb.lower(userJoin.get("email")).in(lowerEmails));
             }
 
             // Date range

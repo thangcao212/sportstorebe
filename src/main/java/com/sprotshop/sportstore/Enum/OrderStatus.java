@@ -1,7 +1,4 @@
-// Updated OrderStatus.java - Refined canTransitionTo logic to match described flows.
-// COD: PENDING -> PROCESSING (admin confirm), PROCESSING -> SHIPPED, SHIPPED -> DELIVERED, DELIVERED -> COMPLETED only if PAID.
-// SEPAY: WAITING_FOR_PAYMENT -> PROCESSING only if PAID, then same as COD post-PROCESSING.
-// Added CANCELED from early states if PENDING.
+// Updated OrderStatus.java - Improved exception message to Vietnamese for better UX
 package com.sprotshop.sportstore.Enum;
 
 import com.sprotshop.sportstore.Enum.PaymentMethod;
@@ -20,9 +17,24 @@ public enum OrderStatus {
     COMPLETED,
     CANCELED;
 
+    // Vietnamese mappings for friendly messages
+    private static final java.util.Map<OrderStatus, String> VIETNAMESE_MAP = java.util.Map.of(
+            PENDING, "Chờ xác nhận",
+            WAITING_FOR_PAYMENT, "Chờ thanh toán",
+            PROCESSING, "Đang xử lý",
+            SHIPPED, "Đã gửi hàng",
+            DELIVERED, "Đã giao hàng",
+            COMPLETED, "Hoàn thành",
+            CANCELED, "Đã hủy"
+    );
+
+    public static String getVietnamese(OrderStatus status) {
+        return VIETNAMESE_MAP.getOrDefault(status, status.name());
+    }
+
     /**
      * Refined validation based on flows:
-     * - COD: PENDING -> PROCESSING (any payment), PROCESSING/SHIPPED -> next, DELIVERED -> COMPLETED only if PAID.
+     * - COD: PENDING -> PROCESSING (admin confirm), PROCESSING -> SHIPPED, SHIPPED -> DELIVERED, DELIVERED -> COMPLETED only if PAID.
      * - SEPAY: WAITING_FOR_PAYMENT -> PROCESSING only if PAID.
      * - CANCELED: From PENDING/WAITING_FOR_PAYMENT/PROCESSING/SHIPPED/DELIVERED if not COMPLETED.
      */
@@ -43,18 +55,28 @@ public enum OrderStatus {
             case SHIPPED -> List.of(OrderStatus.DELIVERED, OrderStatus.CANCELED).contains(next);
             case DELIVERED -> {
                 if (method == PaymentMethod.COD) {
-                    // COD: Need PAID to COMPLETE
+                    // ⚠️ COD: Chỉ cho phép sang COMPLETED khi thanh toán đã được xác nhận (PAID)
                     yield next == OrderStatus.COMPLETED && currentPaymentStatus == PaymentStatus.PAID;
-                } else {  // SEPAY: Already PAID, auto/manual COMPLETE
+                } else {
+                    // 💳 SEPAY hoặc phương thức thanh toán online khác:
+                    // Đơn hàng đã thanh toán từ trước, cho phép sang COMPLETED luôn
                     yield next == OrderStatus.COMPLETED;
                 }
             }
+
             case COMPLETED -> false;  // Terminal
             case CANCELED -> false;   // Terminal
         };
         if (!valid) {
-            throw new InvalidOrderTransitionException("Invalid transition from " + this + " to " + next +
-                    " (method: " + method + ", payment: " + currentPaymentStatus + "). Check flow rules.");
+            // IMPROVED: Vietnamese friendly message
+            String currentVN = getVietnamese(this);
+            String nextVN = getVietnamese(next);
+            String reason = switch (this) {
+                case WAITING_FOR_PAYMENT -> "Cần thanh toán trước khi xử lý (SEPAY).";
+                case DELIVERED -> method == PaymentMethod.COD ? "Cần xác nhận thanh toán COD trước." : "Đã hoàn thành quy trình.";
+                default -> "Không hợp lệ theo quy trình đơn hàng.";
+            };
+            throw new InvalidOrderTransitionException("Không thể chuyển từ '" + currentVN + "' sang '" + nextVN + "'. Lý do: " + reason);
         }
         return valid;
     }
