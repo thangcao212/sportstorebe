@@ -1,6 +1,5 @@
 package com.sprotshop.sportstore.security;
 
-
 import com.sprotshop.sportstore.exception.CustomAccessDenialHandler;
 import com.sprotshop.sportstore.exception.CustomAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +29,9 @@ public class SecurityConfig {
     private final AuthFilter authFilter;
     private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
     private final CustomAccessDenialHandler customAccessDenialHandler;
+    private final CustomOidcUserService customOidcUserService;  // OIDC service (đổi từ CustomOAuth2UserService)
+    private final CustomOAuth2AuthenticationSuccessHandler customOAuth2AuthenticationSuccessHandler;  // Success handler
+    private final CustomOAuth2AuthenticationFailureHandler customOAuth2AuthenticationFailureHandler;  // 👈 Failure handler (thêm nếu thiếu)
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity) throws Exception {
@@ -43,14 +45,21 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/products/**").permitAll()
                         .requestMatchers("/api/orders/sepay-webhook").permitAll()
-                        .requestMatchers("/api/categories").permitAll()
+                        .requestMatchers("/api/categories/**").permitAll()
                         .requestMatchers("/redis/**").permitAll()
+                        .requestMatchers("/login/oauth2/**", "/oauth2/**").permitAll()
                         .anyRequest().authenticated()
+                )
+                .oauth2Login(oauth2 -> oauth2
+                        .userInfoEndpoint(userInfo -> userInfo  // 👈 Nested dưới userInfoEndpoint
+                                .oidcUserService(customOidcUserService)  // 👈 oidcUserService ở đây (fix resolve method)
+                        )
+                        .successHandler(customOAuth2AuthenticationSuccessHandler)
+                        .failureHandler(customOAuth2AuthenticationFailureHandler)
                 )
                 .sessionManagement(manager -> manager.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(authFilter, UsernamePasswordAuthenticationFilter.class);
         return httpSecurity.build();
-
     }
 
     @Bean

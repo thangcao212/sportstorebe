@@ -14,11 +14,12 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
-                        .allowedOrigins("http://localhost:3000", " https://8770ff1c6fa1.ngrok-free.app")
-                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                        .allowedHeaders("Authorization", "Content-Type", "*")
-                        .allowCredentials(true)
-                        .maxAge(3600);
+                        .allowedOrigins("http://localhost:3000")  // FE origin
+                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")  // 👈 Thêm PUT/DELETE/OPTIONS
+                        // Hoặc dùng .allowedMethods("*") để cho phép tất cả (dễ hơn, nhưng kém secure)
+                        .allowedHeaders("Authorization", "Content-Type", "*")  // Đã có, ok
+                        .allowCredentials(true)  // Cho phép cookies nếu cần
+                        .maxAge(3600);  // Cache preflight 1h
             }
         };
     }
