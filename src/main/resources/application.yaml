@@ -1,0 +1,65 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/sportstore}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:password123}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 20MB
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 86400000
+      cache-null-values: false
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope: openid,profile,email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+            user-name-attribute: sub
+
+jwt:
+  secret-key: ${JWT_SECRET_KEY:thanggdev123456789thanggdev123456789}
+
+sepay:
+  bank:
+    name: VietinBank
+    accountNumber: 109874753814
+    accountHolder: Cao Chiến Thắng
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    com.sprotshop.sportstore.security: DEBUG
+    org.springframework.web: DEBUG
