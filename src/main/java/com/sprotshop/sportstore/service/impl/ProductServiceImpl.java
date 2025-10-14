@@ -1,16 +1,15 @@
 package com.sprotshop.sportstore.service.impl;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sprotshop.sportstore.entity.Image;
 import com.sprotshop.sportstore.entity.Product;
 import com.sprotshop.sportstore.entity.ProductCategory;
-import com.sprotshop.sportstore.entity.ProductSize; // Import ProductSize
+import com.sprotshop.sportstore.entity.ProductSize;
 import com.sprotshop.sportstore.exception.NotFoundException;
 import com.sprotshop.sportstore.repository.ImageRepository;
 import com.sprotshop.sportstore.repository.ProductCategoryRepository;
 import com.sprotshop.sportstore.repository.ProductRepository;
-// Import ProductSizeRepository if you create one and need specific methods,
-// otherwise, JpaRepository<ProductSize, Long> can be used if needed directly.
-// For now, ProductSize is managed via cascade from Product.
 import com.sprotshop.sportstore.request.ProductRequest;
 import com.sprotshop.sportstore.request.ProductSearchRequest;
 import com.sprotshop.sportstore.response.ProductResponse;
@@ -19,10 +18,11 @@ import com.sprotshop.sportstore.service.ProductCategoryService;
 import com.sprotshop.sportstore.service.ProductService;
 import com.sprotshop.sportstore.utils.ProductSpecification;
 import lombok.RequiredArgsConstructor;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -32,14 +32,16 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.io.*;
+import java.math.BigDecimal;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.file.Files;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -48,10 +50,11 @@ public class ProductServiceImpl implements ProductService {
     private static final Logger log = LoggerFactory.getLogger(ProductServiceImpl.class);
 
     private final ProductRepository productRepository;
-    private final ImageRepository imageRepository; // Keep if still used directly, otherwise manage Images via Product
+    private final ImageRepository imageRepository;
     private final ProductCategoryService productCategoryService;
     private final CloudinaryService cloudinaryService;
-    private final ProductCategoryRepository productCategoryRepository; // Keep for category-specific logic like finding descendants
+    private final ProductCategoryRepository productCategoryRepository;
+    private final ObjectMapper objectMapper; // For any JSON parsing if needed
 
     @Override
     @Transactional
@@ -71,11 +74,11 @@ public class ProductServiceImpl implements ProductService {
                 // stockQuantity will be set based on sizes
                 .productCategory(category)
                 .images(new HashSet<>())
-                .productSizes(new java.util.HashSet<>()) // Initialize productSizes set
+                .productSizes(new HashSet<>()) // Initialize productSizes set
                 .build();
 
-        // Process and add images
-        processImageUploads(productRequest.getImages(), product);
+        // Process and add images - handles both files and URLs
+        processImages(productRequest, product);
 
         // Process and add product sizes, and calculate total stock
         int totalStock = 0;
@@ -92,19 +95,14 @@ public class ProductServiceImpl implements ProductService {
                 log.debug("Added size: {}, stock: {} to product {}", sizeRequest.getSize(), sizeRequest.getStockQuantity(), product.getName());
             }
         } else {
-            // If no sizes are provided, use the stockQuantity from the request as total stock.
-            // Or, you could enforce that sizes must be provided.
             log.warn("No sizes provided for product {}. Using stockQuantity from request if available, or defaulting to 0.", productRequest.getName());
             totalStock = productRequest.getStockQuantity() != null ? productRequest.getStockQuantity() : 0;
         }
         product.setStockQuantity(totalStock);
         log.info("Total calculated stock for product {}: {}", product.getName(), totalStock);
 
-
         Product savedProduct = productRepository.save(product); // Save product with images and sizes (cascaded)
         log.info("Product saved initially, id={}", savedProduct.getId());
-
-
 
         Product fullyLoadedProduct = findProductEntityById(savedProduct.getId()); // This will ensure all defined eager/EntityGraph paths are loaded
         log.info("Product fully reloaded after save, id={}", fullyLoadedProduct.getId());
@@ -126,24 +124,16 @@ public class ProductServiceImpl implements ProductService {
 
         updateProductCategoryIfNeeded(product, productRequest);
         processImageDeletions(productRequest.getImageIdsToDelete(), product); // Handles existing images
-        processImageUploads(productRequest.getImages(), product); // Handles new images
+        processImages(productRequest, product); // Handles new images (files or URLs, but for update, assume files)
 
-        // Update product sizes
-        // Clear existing sizes (orphanRemoval=true will delete them from DB)
-        // and add new ones from the request.
-        // This is a "replace all" strategy for sizes.
         if (productRequest.getSizes() != null) { // If null, don't touch sizes. If empty list, remove all.
             log.info("Updating sizes for product id: {}. Clearing existing {} sizes.", id, product.getProductSizes().size());
-            // Need to iterate and remove to ensure orphanRemoval is triggered correctly by JPA
-            // if just product.getProductSizes().clear() is not enough with some JPA providers/configs.
-            // However, with orphanRemoval=true, product.getProductSizes().clear() followed by adding new ones
-            // and then saving the product *should* work.
+
             List<ProductSize> oldSizes = new ArrayList<>(product.getProductSizes());
             for(ProductSize oldSize : oldSizes){
                 product.removeProductSize(oldSize); // Ensure bidirectional link is broken
             }
             // product.getProductSizes().clear(); // Simpler, relies on orphanRemoval
-
 
             int totalStock = 0;
             if (!CollectionUtils.isEmpty(productRequest.getSizes())) {
@@ -165,17 +155,9 @@ public class ProductServiceImpl implements ProductService {
             product.setStockQuantity(totalStock);
             log.info("Total recalculated stock for product id {}: {}", id, totalStock);
         } else {
-            // If productRequest.getSizes() is null, it means sizes are not part of this update.
-            // The product's existing sizes and total stock quantity remain unchanged by this section.
-            // If the productRequest.stockQuantity field is intended to update total stock independently,
-            // that logic would go here, but it can conflict with size-based stock.
-            // For now, if sizes aren't in request, Product.stockQuantity isn't changed by this block.
             log.debug("No size information in update request for product id: {}. Sizes and total stock (from sizes) remain unchanged.", id);
-            // Optionally, if productRequest.getStockQuantity() should override:
-            // product.setStockQuantity(productRequest.getStockQuantity());
-            // But this is usually not desired if sizes dictate stock.
-        }
 
+        }
 
         Product updatedProduct = productRepository.save(product);
         log.info("Product updated successfully: id={}", updatedProduct.getId());
@@ -188,20 +170,20 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     public void deleteProduct(Long id) throws IOException {
         log.warn("Deleting product id: {}", id);
-        Product product = findProductEntityById(id); // Load product, including images (due to EntityGraph)
+        Product product = findProductEntityById(id);
 
-        // Images are handled by cascade delete on product and orphanRemoval on product.images.
-        // Cloudinary deletion needs to be explicit.
         if (product.getImages() != null && !product.getImages().isEmpty()) {
             log.info("Deleting {} images from Cloudinary for product id: {}", product.getImages().size(), id);
             List<String> imageIds = product.getImages().stream()
                     .map(Image::getImageId).filter(Objects::nonNull).toList();
             for (String imageId : imageIds) {
-                try { cloudinaryService.delete(imageId); }
-                catch (IOException e) { log.error("Failed to delete Cloudinary image (id={}): {}", imageId, e.getMessage()); }
+                try {
+                    cloudinaryService.delete(imageId);
+                } catch (IOException e) {
+                    log.error("Failed to delete Cloudinary image (id={}): {}", imageId, e.getMessage());
+                }
             }
         }
-        // ProductSizes will be deleted by cascade due to Product deletion.
 
         productRepository.delete(product);
         log.warn("Product deleted successfully from DB: id={}", id);
@@ -211,7 +193,7 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public ProductResponse getProductById(Long id) {
         log.debug("Fetching product by id: {}", id);
-        Product product = findProductEntityById(id); // Uses EntityGraph
+        Product product = findProductEntityById(id);
         return ProductResponse.fromEntity(product);
     }
 
@@ -219,7 +201,6 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public List<ProductResponse> getAllProducts() {
         log.debug("Fetching all products");
-        // Ensure findAll() in repository uses @EntityGraph that includes productSizes if they should always be returned
         return ProductResponse.fromEntities(productRepository.findAll());
     }
 
@@ -227,7 +208,6 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public Page<ProductResponse> getProductsPage(Pageable pageable) {
         log.debug("Fetching products page: {}", pageable);
-        // Ensure findAll(Pageable) in repository uses @EntityGraph for productSizes
         return productRepository.findAll(pageable).map(ProductResponse::fromEntity);
     }
 
@@ -235,7 +215,6 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public List<ProductResponse> searchProductsByName(String name) {
         log.debug("Searching products by name containing: '{}'", name);
-        // Ensure findByNameContainingIgnoreCase in repository uses @EntityGraph for productSizes
         return ProductResponse.fromEntities(productRepository.findByNameContainingIgnoreCase(name));
     }
 
@@ -244,7 +223,6 @@ public class ProductServiceImpl implements ProductService {
     public List<ProductResponse> getProductsByCategory(Long categoryId) {
         log.debug("Fetching products by category id: {}", categoryId);
         ProductCategory category = productCategoryService.findCategoryEntityById(categoryId);
-        // Ensure findByProductCategory in repository uses @EntityGraph for productSizes
         return ProductResponse.fromEntities(productRepository.findByProductCategory(category));
     }
 
@@ -269,24 +247,333 @@ public class ProductServiceImpl implements ProductService {
         if (searchRequest.getMinPrice() != null || searchRequest.getMaxPrice() != null) {
             spec = spec.and(ProductSpecification.byPriceRange(searchRequest.getMinPrice(), searchRequest.getMaxPrice()));
         }
-        // The byStockQuantity spec filters on Product.stockQuantity, which is now the total stock.
         if (searchRequest.getMinStock() != null || searchRequest.getMaxStock() != null) {
             spec = spec.and(ProductSpecification.byStockQuantity(searchRequest.getMinStock(), searchRequest.getMaxStock()));
         }
 
-        // Ensure findAll(Specification, Pageable) in repository uses @EntityGraph for productSizes
         Page<Product> products = productRepository.findAll(spec, pageable);
         log.info("Found {} products on page {} of size {} matching search criteria",
                 products.getTotalElements(), products.getNumber(), products.getSize());
         return products.map(ProductResponse::fromEntity);
     }
 
-    // --- Helper Methods ---
+    @Override
+    @Transactional
+    public List<ProductResponse> importProductsFromExcel(MultipartFile excelFile) throws IOException {
+        long startTime = System.currentTimeMillis();
+        log.info("Starting Excel import for products: filename={}", excelFile.getOriginalFilename());
+        Map<String, ProductCategory> categoryCache = new HashMap<>();
+        List<Product> productsToBatchSave = new ArrayList<>();
+        List<ProductResponse> importedProducts = new ArrayList<>();
+        try (InputStream is = excelFile.getInputStream(); Workbook workbook = new XSSFWorkbook(is)) {
+            Sheet sheet = workbook.getSheet("Products");
+            if (sheet == null) {
+                throw new IllegalArgumentException("Excel must have a sheet named 'Products'");
+            }
 
-    /** Tìm Product kèm Category, Images (và ProductSizes if included in EntityGraph) */
-    private Product findProductEntityById(Long id){
-        // Ensure your findById in ProductRepository has an @EntityGraph that includes "productSizes"
-        // Example: @EntityGraph(attributePaths = {"productCategory", "images", "productSizes"})
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+
+                try {
+                    ProductRequest productRequest = parseRowToProductRequest(row);
+                    if (productRequest.getName() == null || productRequest.getName().trim().isEmpty()) {
+                        log.warn("Skipping empty row {}", i);
+                        continue;
+                    }
+
+                    // Cache category
+                    String catName = productRequest.getCategoryName();
+                    String key = catName.toLowerCase();
+                    ProductCategory category = categoryCache.computeIfAbsent(key, k ->
+                            productCategoryService.findOrCreateCategory(k, null, null));
+                    productRequest.setCategoryId(category.getId());
+
+                    // Tạo product với images từ URLs (parallel direct upload)
+                    Product product = createProductFromRequest(productRequest, category);
+                    productsToBatchSave.add(product);
+
+                    log.info("Parsed product: {} (row {})", productRequest.getName(), i);
+                } catch (Exception e) {
+                    log.error("Error importing row {}: {}", i, e.getMessage(), e);
+                }
+            }
+
+            // Batch save all
+            List<Product> savedProducts = productRepository.saveAll(productsToBatchSave);
+            log.info("Batch saved {} products", savedProducts.size());
+
+            // Reload for response
+            importedProducts = savedProducts.stream()
+                    .map(saved -> ProductResponse.fromEntity(findProductEntityById(saved.getId())))
+                    .collect(Collectors.toList());
+        }
+        long endTime = System.currentTimeMillis();
+        log.info("Excel import completed in {} ms. Imported {} products.", endTime - startTime, importedProducts.size());
+        return importedProducts;
+    }
+
+    // Helper: Tạo product từ request (gọi processImageUploads + sizes) - for Excel, uses URLs
+    private Product createProductFromRequest(ProductRequest request, ProductCategory category) throws IOException {
+        Product product = Product.builder()
+                .name(request.getName())
+                .description(request.getDescription())
+                .price(request.getPrice())
+                .productCategory(category)
+                .images(new HashSet<>())
+                .productSizes(new HashSet<>())
+                .build();
+
+        // For Excel: process URLs
+        processImageUrls(request.getImageUrls(), product);
+
+        // Add sizes
+        int totalStock = 0;
+        if (!CollectionUtils.isEmpty(request.getSizes())) {
+            for (ProductRequest.ProductSizeRequest sizeRequest : request.getSizes()) {
+                ProductSize productSize = ProductSize.builder()
+                        .size(sizeRequest.getSize())
+                        .stockQuantity(sizeRequest.getStockQuantity())
+                        .build();
+                product.addProductSize(productSize);
+                totalStock += sizeRequest.getStockQuantity();
+            }
+        } else {
+            totalStock = request.getStockQuantity() != null ? request.getStockQuantity() : 0;
+        }
+        product.setStockQuantity(totalStock);
+
+        return product;
+    }
+
+    // Method to process images - unified for create (handles files or URLs)
+    private void processImages(ProductRequest request, Product product) throws IOException {
+        // Priority: files for regular create/update
+        if (!CollectionUtils.isEmpty(request.getImages())) {
+            processFileUploads(request.getImages(), product);
+        } else if (!CollectionUtils.isEmpty(request.getImageUrls())) {
+            // Fallback to URLs (for Excel or if no files)
+            processImageUrls(request.getImageUrls(), product);
+        }
+    }
+
+    // Process MultipartFile uploads (old logic for create/update)
+    private void processFileUploads(List<MultipartFile> imageFiles, Product product) throws IOException {
+        if (imageFiles != null && !imageFiles.isEmpty()) {
+            log.info("Processing {} new image uploads for product {}", imageFiles.size(), product.getName() != null ? product.getName() : "NEW");
+            for (MultipartFile file : imageFiles) {
+                if (file != null && !file.isEmpty()) {
+                    Image image = uploadAndCreateImageEntity(file);
+                    product.addImage(image); // Sets bidirectional link
+                }
+            }
+        }
+    }
+
+    // Process URL uploads (for Excel import)
+    private void processImageUrls(List<String> imageUrls, Product product) throws IOException {
+        if (imageUrls != null && !imageUrls.isEmpty()) {
+            ExecutorService executor = Executors.newFixedThreadPool(5);
+            List<CompletableFuture<Image>> futures = imageUrls.stream()
+                    .filter(StringUtils::hasText)
+                    .map(url -> CompletableFuture.supplyAsync(() -> uploadDirectFromUrl(url), executor))
+                    .collect(Collectors.toList());
+            List<Image> images = futures.stream()
+                    .map(CompletableFuture::join)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            for (Image image : images) {
+                product.addImage(image);
+            }
+            executor.shutdown();
+            log.info("Parallel direct uploaded {} images for product {}", images.size(), product.getName());
+        }
+    }
+
+    private Image uploadDirectFromUrl(String url) {
+        try {
+            // Thử direct URL upload
+            Map uploadResult = cloudinaryService.uploadUrl(url);
+            if (uploadResult != null && uploadResult.get("secure_url") != null) {
+                String imageUrl = (String) uploadResult.get("secure_url");
+                String imageId = (String) uploadResult.get("public_id");
+                log.debug("Direct upload success for {}", url);
+                return Image.builder()
+                        .name(url.substring(url.lastIndexOf('/') + 1))
+                        .imageUrl(imageUrl)
+                        .imageId(imageId)
+                        .build();
+            } else {
+                log.warn("Direct upload failed for {}, fallback to download + upload", url);
+                // Fallback: Download bytes
+                MultipartFile tempFile = downloadSingleImage(url);
+                if (tempFile != null && !tempFile.isEmpty()) {
+                    Map fallbackResult = cloudinaryService.upload(tempFile);
+                    String imageUrl = (String) fallbackResult.get("secure_url");
+                    String imageId = (String) fallbackResult.get("public_id");
+                    log.debug("Fallback upload success for {}", url);
+                    return Image.builder()
+                            .name(tempFile.getOriginalFilename())
+                            .imageUrl(imageUrl)
+                            .imageId(imageId)
+                            .build();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Upload fail for {}: {}", url, e.getMessage());
+        }
+        return null;
+    }
+
+    private MultipartFile downloadSingleImage(String url) {
+        try {
+            log.debug("Fallback download: {}", url);
+            URL urlObj = new URL(url);
+            HttpURLConnection connection = (HttpURLConnection) urlObj.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(20000);
+            connection.setReadTimeout(20000);
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+            int responseCode = connection.getResponseCode();
+            if (responseCode == 200) {
+                try (InputStream inputStream = connection.getInputStream();
+                     ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, bytesRead);
+                    }
+                    byte[] imageBytes = outputStream.toByteArray();
+                    if (imageBytes.length > 0) {
+                        String filename = url.substring(url.lastIndexOf('/') + 1);
+                        if (filename.contains("?")) filename = filename.split("\\?")[0];
+                        if (!filename.contains(".")) filename += ".jpg";
+                        return new ByteArrayMultipartFile(imageBytes, filename, "image/jpeg");
+                    }
+                }
+            } else {
+                log.warn("Fallback HTTP fail: {} - Code {}", url, responseCode);
+            }
+        } catch (Exception e) {
+            log.warn("Fallback download fail for {}: {}", url, e.getMessage());
+        }
+        return null;
+    }
+
+    // ByteArrayMultipartFile class for fallback
+    private static class ByteArrayMultipartFile implements MultipartFile {
+        private final byte[] content;
+        private final String filename;
+        private final String contentType;
+
+        public ByteArrayMultipartFile(byte[] content, String filename, String contentType) {
+            this.content = content;
+            this.filename = filename;
+            this.contentType = contentType;
+        }
+
+        @Override
+        public String getName() { return filename; }
+
+        @Override
+        public String getOriginalFilename() { return filename; }
+
+        @Override
+        public String getContentType() { return contentType; }
+
+        @Override
+        public boolean isEmpty() { return content == null || content.length == 0; }
+
+        @Override
+        public long getSize() { return content.length; }
+
+        @Override
+        public byte[] getBytes() throws IOException { return content; }
+
+        @Override
+        public InputStream getInputStream() throws IOException { return new ByteArrayInputStream(content); }
+
+        @Override
+        public void transferTo(File dest) throws IOException, IllegalStateException { Files.write(dest.toPath(), content); }
+    }
+
+    // Method parseRowToProductRequest (from initial for Excel)
+    private ProductRequest parseRowToProductRequest(Row row) {
+        String name = getCellValueAsString(row.getCell(0));
+        String description = getCellValueAsString(row.getCell(1));
+        BigDecimal priceBd = getCellValueAsBigDecimal(row.getCell(2));
+        String categoryName = getCellValueAsString(row.getCell(3));
+        String sizesStr = getCellValueAsString(row.getCell(4));
+        String stockQuantitiesStr = getCellValueAsString(row.getCell(5));
+
+        // Parse imageUrls (cột G)
+        String imageUrlsStr = getCellValueAsString(row.getCell(6));
+        List<String> imageUrls = StringUtils.hasText(imageUrlsStr)
+                ? Arrays.stream(imageUrlsStr.split(","))
+                .map(String::trim)
+                .collect(Collectors.toList())
+                : new ArrayList<>();
+
+        ProductRequest request = ProductRequest.builder()
+                .name(name)
+                .description(description)
+                .price(priceBd != null ? priceBd.doubleValue() : null)
+                .categoryName(categoryName)
+                .imageUrls(imageUrls)  // Set URLs for Excel
+                .build();
+
+        int totalStock = 0;
+        if (StringUtils.hasText(sizesStr) && StringUtils.hasText(stockQuantitiesStr)) {
+            String[] sizes = sizesStr.split(",");
+            String[] quantities = stockQuantitiesStr.split(",");
+            if (sizes.length == quantities.length) {
+                List<ProductRequest.ProductSizeRequest> sizeRequests = new ArrayList<>();
+                for (int j = 0; j < sizes.length; j++) {
+                    try {
+                        ProductRequest.ProductSizeRequest sizeReq = ProductRequest.ProductSizeRequest.builder()
+                                .size(sizes[j].trim().toUpperCase())
+                                .stockQuantity(Integer.parseInt(quantities[j].trim()))
+                                .build();
+                        sizeRequests.add(sizeReq);
+                        totalStock += Integer.parseInt(quantities[j].trim());
+                    } catch (NumberFormatException e) {
+                        log.warn("Invalid stock quantity '{}' for size '{}'", quantities[j], sizes[j]);
+                    }
+                }
+                request.setSizes(sizeRequests);
+            } else {
+                log.warn("Mismatched sizes and quantities in row: sizes={}, quantities={}", sizesStr, stockQuantitiesStr);
+            }
+        } else if (StringUtils.hasText(stockQuantitiesStr)) {
+            try {
+                totalStock = Integer.parseInt(stockQuantitiesStr.trim());
+                request.setStockQuantity(totalStock);
+            } catch (NumberFormatException e) {
+                log.warn("Invalid total stock '{}'", stockQuantitiesStr);
+            }
+        }
+
+        return request;
+    }
+
+    private String getCellValueAsString(Cell cell) {
+        if (cell == null) return null;
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue().trim();
+            case NUMERIC -> String.valueOf((long) cell.getNumericCellValue());
+            default -> null;
+        };
+    }
+
+    private BigDecimal getCellValueAsBigDecimal(Cell cell) {
+        if (cell == null) return null;
+        if (cell.getCellType() == CellType.NUMERIC) {
+            return BigDecimal.valueOf(cell.getNumericCellValue());
+        }
+        return null;
+    }
+
+    private Product findProductEntityById(Long id) {
         return productRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Product not found with ID: " + id));
     }
@@ -323,34 +610,18 @@ public class ProductServiceImpl implements ProductService {
         }
     }
 
-    private void processImageUploads(List<MultipartFile> imageFiles, Product product) throws IOException {
-        if (imageFiles != null && !imageFiles.isEmpty()) {
-            log.info("Processing {} new image uploads for product id={}", imageFiles.size(), product.getId() != null ? product.getId() : "NEW");
-            for (MultipartFile file : imageFiles) {
-                if (file != null && !file.isEmpty()) {
-                    Image image = uploadAndCreateImageEntity(file);
-                    product.addImage(image); // Sets bidirectional link
-                }
-            }
-        }
-    }
-
     private void processImageDeletions(List<String> imageIdsToDelete, Product product) {
         if (imageIdsToDelete != null && !imageIdsToDelete.isEmpty()) {
             log.info("Processing {} image deletions for product id={}", imageIdsToDelete.size(), product.getId());
             List<Image> imagesToRemove = new ArrayList<>();
-            // Ensure product.getImages() is initialized (it should be if findProductEntityById loads it)
-            if(product.getImages() != null && Hibernate.isInitialized(product.getImages())) {
+            if (product.getImages() != null && Hibernate.isInitialized(product.getImages())) {
                 product.getImages().stream()
                         .filter(img -> imageIdsToDelete.contains(img.getImageId()))
                         .forEach(imagesToRemove::add);
             } else {
                 log.warn("Images collection not initialized for product id: {}. Cannot process deletions by Cloudinary ID.", product.getId());
-                // Optionally, you could fetch images separately here if they weren't loaded,
-                // but it's better to ensure they are loaded by findProductEntityById.
                 return;
             }
-
 
             if (!imagesToRemove.isEmpty()) {
                 log.debug("Found {} images associated with product to delete.", imagesToRemove.size());
@@ -361,7 +632,7 @@ public class ProductServiceImpl implements ProductService {
                     } catch (IOException e) {
                         log.error("Failed to delete Cloudinary image (id={}): {}", img.getImageId(), e.getMessage());
                     }
-                    product.removeImage(img); // Important for orphanRemoval and breaking link
+                    product.removeImage(img);
                 }
                 log.info("Marked {} images for removal via orphanRemoval for product id={}", imagesToRemove.size(), product.getId());
             } else {

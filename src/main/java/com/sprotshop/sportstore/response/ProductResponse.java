@@ -1,7 +1,8 @@
 package com.sprotshop.sportstore.response;
 
+import com.sprotshop.sportstore.entity.Image;
 import com.sprotshop.sportstore.entity.Product;
-import com.sprotshop.sportstore.entity.ProductSize; // Import ProductSize
+import com.sprotshop.sportstore.entity.ProductSize;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

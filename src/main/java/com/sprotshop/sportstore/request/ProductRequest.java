@@ -44,7 +44,8 @@ public class ProductRequest {
     private Long parentCategoryId; // Used with categoryName for single level creation
 
     // --- Image Info ---
-    private List<MultipartFile> images; // New images to upload
+    private List<MultipartFile> images; // New images to upload (for regular create/update)
+    private List<String> imageUrls; // URLs for Excel import
     private List<String> imageIdsToDelete; // Cloudinary Public IDs of images to delete on update
 
     @Valid // Enable validation for nested objects

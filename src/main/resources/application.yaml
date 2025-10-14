@@ -15,6 +15,11 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
+        jdbc:
+           batch_size: 50  # Batch insert size
+        order_inserts: true  # Order INSERT for batch
+        order_updates: true  # Order UPDATE for batch
+        flush_mode: COMMIT  # Flush only at commit, not auto
 
   servlet:
     multipart:

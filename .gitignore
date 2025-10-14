@@ -31,7 +31,11 @@ build/
 
 ### VS Code ###
 .vscode/
+<<<<<<< HEAD
 
 # Environment variables
 .env
 
+=======
+.env
+>>>>>>> d62cb73 (import excel 14_10_2025)

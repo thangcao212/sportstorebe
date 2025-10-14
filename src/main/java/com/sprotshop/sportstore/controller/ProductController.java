@@ -1,6 +1,6 @@
 package com.sprotshop.sportstore.controller;
 
-import com.sprotshop.sportstore.request.ProductRequest; // Dùng ProductRequest đã cập nhật
+import com.sprotshop.sportstore.request.ProductRequest;
 import com.sprotshop.sportstore.request.ProductSearchRequest;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.PageResponse;
@@ -19,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
@@ -96,9 +97,7 @@ public class ProductController {
         return ResponseEntity.ok(response);
     }
 
-
-
-    @GetMapping("/category/{categoryId}") // Endpoint này đúng
+    @GetMapping("/category/{categoryId}")
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getProductsByCategory(
             @PathVariable Long categoryId) {
         log.info("GET /api/products/category/{}", categoryId);
@@ -143,8 +142,6 @@ public class ProductController {
         return ResponseEntity.ok(apiResponse);
     }
 
-
-
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<PageResponse<ProductResponse>>> searchProducts(
             @RequestParam(required = false) String searchValue,
@@ -182,5 +179,19 @@ public class ProductController {
         log.info("Found {} products on page {} of size {} matching search criteria",
                 page.getTotalElements(), page.getNumber(), page.getSize());
         return ResponseEntity.ok(apiResponse);
+    }
+
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> importProducts(
+            @RequestParam("file") MultipartFile excelFile) throws IOException {
+        log.info("POST /api/products/import - Importing products from Excel: {}", excelFile.getOriginalFilename());
+        List<ProductResponse> importedProducts = productService.importProductsFromExcel(excelFile);
+        ApiResponse<List<ProductResponse>> response = ApiResponse.<List<ProductResponse>>builder()
+                .message("Products imported successfully: " + importedProducts.size() + " items")
+                .data(importedProducts)
+                .status(HttpStatus.CREATED.value())
+                .build();
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 }
