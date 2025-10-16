@@ -9,7 +9,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
-import org.springframework.security.oauth2.core.oidc.OidcUserInfo;  // 👈 Thêm import cho OidcUserInfo
+import org.springframework.security.oauth2.core.oidc.OidcUserInfo;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 
@@ -23,10 +23,11 @@ public class UserPrincipal implements UserDetails, OidcUser {  // Giữ implemen
 
     private Long id;
     private String email;
-    private String username;
+    private String displayName;  // 👈 Đổi từ username thành displayName (tên hiển thị)
     private UserRole role;
     private AuthProvider provider;
     private String password;
+    private String imageUrl;
     private Map<String, Object> attributes;
     private OidcIdToken idToken;
     private Map<String, Object> claims;
@@ -36,7 +37,8 @@ public class UserPrincipal implements UserDetails, OidcUser {  // Giữ implemen
         return UserPrincipal.builder()
                 .id(user.getId())
                 .email(user.getEmail())
-                .username(user.getUsername())
+                .displayName(user.getUsername())  // 👈 Dùng displayName = user.username (tên)
+                .imageUrl(user.getAvatar())
                 .role(user.getRole())
                 .provider(user.getProvider())
                 .password(user.getPassword())
@@ -64,7 +66,12 @@ public class UserPrincipal implements UserDetails, OidcUser {  // Giữ implemen
 
     @Override
     public String getUsername() {
-        return email;
+        return email;  // 👈 Giữ nguyên: Trả về email cho UserDetails/JWT validation
+    }
+
+    // 👈 Thêm method mới để lấy display name (tên hiển thị)
+    public String getDisplayName() {
+        return displayName;
     }
 
     @Override
@@ -84,9 +91,10 @@ public class UserPrincipal implements UserDetails, OidcUser {  // Giữ implemen
     @Override
     public OidcIdToken getIdToken() { return idToken; }
     @Override
-    public String getName() { return username; }
+    public String getName() {
+        return displayName;  // 👈 Dùng displayName (tên) thay vì username cũ
+    }
 
-    // 👈 Fix: Override getUserInfo() (abstract từ OidcUser)
     @Override
     public OidcUserInfo getUserInfo() {
         return null;  // Không cần default OidcUserInfo (dùng attributes/claims custom)

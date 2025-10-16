@@ -1,32 +1,35 @@
 package com.sprotshop.sportstore.service;
 
+import com.sprotshop.sportstore.entity.Address;
 import com.sprotshop.sportstore.entity.User;
-import com.sprotshop.sportstore.request.LoginRequest;
-import com.sprotshop.sportstore.request.RegisterRequest;
+import com.sprotshop.sportstore.request.*;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.AuthResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import org.springframework.data.domain.Pageable;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 public interface UserService {
-    /**
-     * Register a new user with address
-     * @param registerRequest the registration request containing user and address information
-     * @return ApiResponse containing AuthResponse with JWT token and success message
-     */
+    // Auth
     ApiResponse<AuthResponse> register(RegisterRequest registerRequest);
-
-    /**
-     * Authenticate a user and generate JWT token
-     * @param loginRequest the login request containing email and password
-     * @return ApiResponse containing AuthResponse with JWT token and success message
-     */
     ApiResponse<AuthResponse> login(LoginRequest loginRequest);
     User getCurrentLoggedInUser();
     PageResponse<User> getAllUsers(Pageable pageable);
-
     void deleteUser(Long id);
 
+    // Profile
+    ApiResponse<User> getProfile();
+    ApiResponse<User> updateProfile(UpdateProfileRequest request);
+    ApiResponse<String> uploadAvatar(MultipartFile file);
+    ApiResponse<String> changePassword(ChangePasswordRequest request);
+//    ApiResponse<String> forgotPassword(ForgotPasswordRequest request);
+    ApiResponse<String> logoutAll();
 
-
+    // Addresses
+    ApiResponse<List<Address>> getAddresses();
+    ApiResponse<Address> addAddress(AddAddressRequest request);
+    ApiResponse<Address> updateAddress(Long id, UpdateAddressRequest request);
+    void deleteAddress(Long id);
 }

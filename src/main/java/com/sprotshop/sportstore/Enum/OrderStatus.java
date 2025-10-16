@@ -1,4 +1,3 @@
-// Updated OrderStatus.java - Improved exception message to Vietnamese for better UX
 package com.sprotshop.sportstore.Enum;
 
 import com.sprotshop.sportstore.Enum.PaymentMethod;
@@ -7,6 +6,7 @@ import com.sprotshop.sportstore.exception.InvalidOrderTransitionException;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 public enum OrderStatus {
     PENDING,
@@ -18,7 +18,7 @@ public enum OrderStatus {
     CANCELED;
 
     // Vietnamese mappings for friendly messages
-    private static final java.util.Map<OrderStatus, String> VIETNAMESE_MAP = java.util.Map.of(
+    private static final Map<OrderStatus, String> VIETNAMESE_MAP = Map.of(
             PENDING, "Chờ xác nhận",
             WAITING_FOR_PAYMENT, "Chờ thanh toán",
             PROCESSING, "Đang xử lý",
@@ -36,7 +36,7 @@ public enum OrderStatus {
      * Refined validation based on flows:
      * - COD: PENDING -> PROCESSING (admin confirm), PROCESSING -> SHIPPED, SHIPPED -> DELIVERED, DELIVERED -> COMPLETED only if PAID.
      * - SEPAY: WAITING_FOR_PAYMENT -> PROCESSING only if PAID.
-     * - CANCELED: From PENDING/WAITING_FOR_PAYMENT/PROCESSING/SHIPPED/DELIVERED if not COMPLETED.
+     * - CANCELED: From PENDING/WAITING/PROCESSING/SHIPPED/DELIVERED if not COMPLETED.
      */
     public boolean canTransitionTo(OrderStatus next, PaymentMethod method, PaymentStatus currentPaymentStatus) {
         boolean valid = switch (this) {
@@ -82,7 +82,8 @@ public enum OrderStatus {
     }
 
     public List<OrderStatus> getPossibleNextStates(PaymentMethod method, PaymentStatus payStatus) {
-        return Arrays.stream(values())
+        // Base list from strict validation
+        List<OrderStatus> possible = Arrays.stream(values())
                 .filter(s -> {
                     try {
                         return this.canTransitionTo(s, method, payStatus);
@@ -91,5 +92,14 @@ public enum OrderStatus {
                     }
                 })
                 .toList();
+
+        // NEW: Special case for UX - Include COMPLETED for COD DELIVERED + PENDING (auto-confirm will handle in updateOrderStatus)
+        if (this == DELIVERED && method == PaymentMethod.COD && payStatus == PaymentStatus.PENDING) {
+            if (!possible.contains(COMPLETED)) {
+                possible.add(COMPLETED);
+            }
+        }
+
+        return possible;
     }
 }

@@ -150,9 +150,10 @@ public class ProductController {
             @RequestParam(required = false) Double maxPrice,
             @RequestParam(required = false) Integer minStock,
             @RequestParam(required = false) Integer maxStock,
+            @RequestParam(required = false) Long brandId,
             Pageable pageable) {
-        log.debug("Received request to search products with criteria: searchValue={}, categoryId={}, minPrice={}, maxPrice={}, minStock={}, maxStock={}, pageable={}",
-                searchValue, categoryId, minPrice, maxPrice, minStock, maxStock, pageable);
+        log.debug("Received request to search products with criteria: searchValue={}, categoryId={}, minPrice={}, maxPrice={},brandId={}, minStock={}, maxStock={}, pageable={}",
+                searchValue, categoryId,brandId, minPrice, maxPrice, minStock, maxStock, pageable);
 
         ProductSearchRequest searchRequest = ProductSearchRequest.builder()
                 .searchValue(searchValue)
@@ -161,6 +162,7 @@ public class ProductController {
                 .maxPrice(maxPrice)
                 .minStock(minStock)
                 .maxStock(maxStock)
+                .brandId(brandId)
                 .build();
 
         Page<ProductResponse> page = productService.searchProducts(searchRequest, pageable);

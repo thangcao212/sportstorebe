@@ -1,4 +1,4 @@
-// Updated OrderResponse.java - Added setter for bankInfo (since it's used in createOrderFromCart)
+// Updated OrderResponse.java - Added fields for originalTotalAmount, discountAmount, couponCode
 package com.sprotshop.sportstore.response;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
@@ -20,14 +20,19 @@ public class OrderResponse {
     private UserDTO user;
     private LocalDateTime orderDate;
     private OrderStatus status;
-    private BigDecimal totalAmount;
+    private BigDecimal totalAmount;  // After discount
+    private BigDecimal originalTotalAmount;  // NEW: Before discount
+    private BigDecimal discountAmount;  // NEW: Discount applied
+    private String couponCode;  // NEW: Coupon code used
     private PaymentMethod paymentMethod;
     private String paymentStatus;
     private String trackingNumber;
     private String recipientName;
     private String phone;
-    private String street;
-    private String fullAddress;
+    private String label;  // From address (if needed)
+    private String street; // From address (if needed)
+    private String fullAddress;  // Legacy, or keep for backward compat
+    private String deliveryAddress;
     private List<OrderItemDTO> items;
     private String qrCodeUrl; // For SEPAY
     private Map<String, Object> bankInfo;
@@ -35,6 +40,19 @@ public class OrderResponse {
     // Setter for bankInfo
     public void setBankInfo(Map<String, Object> bankInfo) {
         this.bankInfo = bankInfo;
+    }
+
+    // NEW: Setters for additional fields
+    public void setOriginalTotalAmount(BigDecimal originalTotalAmount) {
+        this.originalTotalAmount = originalTotalAmount;
+    }
+
+    public void setDiscountAmount(BigDecimal discountAmount) {
+        this.discountAmount = discountAmount;
+    }
+
+    public void setCouponCode(String couponCode) {
+        this.couponCode = couponCode;
     }
 
     public static OrderResponse fromEntity(Order order) {
@@ -47,10 +65,14 @@ public class OrderResponse {
                 .orderDate(order.getCreatedAt())
                 .status(order.getStatus())
                 .totalAmount(order.getTotalAmount())
+                .originalTotalAmount(null)  // Set in service if available
+                .discountAmount(BigDecimal.ZERO)  // Set in service
+                .couponCode(order.getCoupon() != null ? order.getCoupon().getCode() : null)
                 .paymentMethod(order.getPaymentMethod())
                 .paymentStatus(order.getPaymentStatus().name())
                 .trackingNumber(order.getTrackingNumber())
                 .recipientName(order.getShippingRecipientName())
+                .deliveryAddress(order.getDeliveryAddress())
                 .phone(order.getShippingPhone())
                 .street(order.getAddress().getStreet())
                 .fullAddress(order.getAddress().getFullAddress())

@@ -1,16 +1,22 @@
 package com.sprotshop.sportstore.controller;
 
+import com.sprotshop.sportstore.entity.Address;
 import com.sprotshop.sportstore.entity.User;
+import com.sprotshop.sportstore.request.*;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.service.UserService;
 import com.sprotshop.sportstore.service.UserStatsService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -77,6 +83,66 @@ public class UserController {
                 .message("Thống kê user mới theo năm")
                 .data(userStatsService.getNewUsersByYear())
                 .build();
+    }
+
+    @GetMapping("/profile")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<User>> getProfile() {
+        return ResponseEntity.ok(userService.getProfile());
+    }
+
+    @PutMapping("/profile")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<User>> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
+        return ResponseEntity.ok(userService.updateProfile(request));
+    }
+
+    @PostMapping("/upload-avatar")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<String>> uploadAvatar(@RequestParam("avatar") MultipartFile file) {
+        return ResponseEntity.ok(userService.uploadAvatar(file));
+    }
+
+    @PutMapping("/change-password")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<String>> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        return ResponseEntity.ok(userService.changePassword(request));
+    }
+
+//    @PostMapping("/forgot-password")
+//    public ResponseEntity<ApiResponse<String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+//        return ResponseEntity.ok(userService.forgotPassword(request));
+//    }
+
+    @PostMapping("/logout-all")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<String>> logoutAll() {
+        return ResponseEntity.ok(userService.logoutAll());
+    }
+
+    @GetMapping("/addresses")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<List<Address>>> getAddresses() {
+        return ResponseEntity.ok(userService.getAddresses());
+    }
+
+    @PostMapping("/addresses")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Address>> addAddress(@Valid @RequestBody AddAddressRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(userService.addAddress(request));
+    }
+
+    @PutMapping("/addresses/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Address>> updateAddress(@PathVariable Long id, @Valid @RequestBody UpdateAddressRequest request) {
+        return ResponseEntity.ok(userService.updateAddress(id, request));
+    }
+
+    @DeleteMapping("/addresses/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<String>> deleteAddress(@PathVariable Long id) {
+        userService.deleteAddress(id);
+        return ResponseEntity.ok(ApiResponse.<String>builder().message("Xóa địa chỉ thành công").status(200).build());
     }
 
 

@@ -1,5 +1,6 @@
 package com.sprotshop.sportstore.response;
 
+import com.sprotshop.sportstore.entity.Brand;
 import com.sprotshop.sportstore.entity.Image;
 import com.sprotshop.sportstore.entity.Product;
 import com.sprotshop.sportstore.entity.ProductSize;
@@ -9,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.Hibernate;
 
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -21,12 +23,16 @@ public class ProductResponse {
     private Long id;
     private String name;
     private String description;
-    private Double price;
+    private BigDecimal price;
     private Integer stockQuantity; // Total stock quantity
     private List<ImageInfo> images;
     private Long categoryId;
     private String categoryName;
     private String categoryDescription;
+    private Long brandId;
+    private String brandName;
+    private String brandDescription;
+    private String brandLogoUrl;
     private List<ProductSizeInfo> sizes; // Added sizes info
 
     @Data
@@ -69,6 +75,15 @@ public class ProductResponse {
             catDesc = product.getProductCategory().getDescription();
         }
 
+        // 👈 Added: Brand info
+        Long brandId = null; String brandName = null; String brandDesc = null; String brandLogo = null;
+        if (product.getBrand() != null && Hibernate.isInitialized(product.getBrand())) {
+            brandId = product.getBrand().getId();
+            brandName = product.getBrand().getName();
+            brandDesc = product.getBrand().getDescription();
+            brandLogo = product.getBrand().getLogoUrl();
+        }
+
         List<ProductSizeInfo> sizeInfos = Collections.emptyList();
         if (product.getProductSizes() != null && Hibernate.isInitialized(product.getProductSizes())) {
             if (!product.getProductSizes().isEmpty()) {
@@ -92,6 +107,10 @@ public class ProductResponse {
                 .categoryId(catId)
                 .categoryName(catName)
                 .categoryDescription(catDesc)
+                .brandId(brandId)
+                .brandName(brandName)
+                .brandDescription(brandDesc)
+                .brandLogoUrl(brandLogo)
                 .sizes(sizeInfos) // Add sizes to response
                 .build();
     }

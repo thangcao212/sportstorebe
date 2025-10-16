@@ -1,3 +1,4 @@
+// Updated CreateOrderRequest.java - Fixed field name to camelCase
 package com.sprotshop.sportstore.request;
 
 import com.sprotshop.sportstore.Enum.PaymentMethod;
@@ -32,4 +33,11 @@ public class CreateOrderRequest {
 
     @NotNull(message = "Payment method is required")
     private PaymentMethod paymentMethod;
+
+    private String couponCode;  // Fixed to camelCase for consistency
+
+
+    private Long addressId;
+
+
 }

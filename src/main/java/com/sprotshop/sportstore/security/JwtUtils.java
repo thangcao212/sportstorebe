@@ -18,8 +18,7 @@ import java.util.function.Function;
 @Slf4j
 public class JwtUtils {
 
-
-    private static final long EXPIRATION_TIME_IN_MILLISEC = 1000L * 60L * 60L * 24L * 30L * 6L; //expires in 6 months in milleces
+    private static final long EXPIRATION_TIME_IN_MILLISEC = 1000L * 60L * 60L * 24L ;
     private SecretKey key;
 
     @Value("${jwt.secret-key}")
@@ -46,14 +45,10 @@ public class JwtUtils {
         return extractClaims(token, Claims::getSubject);
     }
 
-    // ✅ Lấy role từ token
+    // ✅ Lấy role từ token (fix: không prefix thêm "ROLE_" vì claim đã có)
     public String getRoleFromToken(String token) {
-        return extractClaims(token, claims -> "ROLE_" + claims.get("role", String.class));
+        return extractClaims(token, claims -> claims.get("role", String.class));
     }
-
-
-
-
 
     private <T> T extractClaims(String token, Function<Claims, T> claimsTFunction) {
         return claimsTFunction.apply(Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload());
@@ -67,7 +62,4 @@ public class JwtUtils {
     private boolean isTokeExpired(String token) {
         return extractClaims(token, Claims::getExpiration).before(new Date());
     }
-
-
-
 }

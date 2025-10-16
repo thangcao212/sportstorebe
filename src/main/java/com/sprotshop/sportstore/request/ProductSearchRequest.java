@@ -32,4 +32,6 @@ public class ProductSearchRequest {
 
     @PositiveOrZero(message = "Tồn kho tối đa không được âm")
     private Integer maxStock; // Tồn kho tối đa
+
+    private Long brandId;
 }

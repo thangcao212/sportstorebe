@@ -1,5 +1,8 @@
 package com.sprotshop.sportstore.entity;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.sprotshop.sportstore.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -27,7 +30,15 @@ public class Address {
 
     @Column(name = "full_address")
     private String fullAddress;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    @JsonBackReference
+    private User user;
+
+    @Column(name = "is_default")
+    private boolean isDefault = false;
+
+    @Column(name = "label")
+    private String label;
 }
-
-
-

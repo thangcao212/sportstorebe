@@ -2,17 +2,18 @@ package com.sprotshop.sportstore.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sprotshop.sportstore.entity.Image;
-import com.sprotshop.sportstore.entity.Product;
-import com.sprotshop.sportstore.entity.ProductCategory;
-import com.sprotshop.sportstore.entity.ProductSize;
+import com.sprotshop.sportstore.entity.*;
 import com.sprotshop.sportstore.exception.NotFoundException;
+import com.sprotshop.sportstore.repository.BrandRepository;
 import com.sprotshop.sportstore.repository.ImageRepository;
 import com.sprotshop.sportstore.repository.ProductCategoryRepository;
 import com.sprotshop.sportstore.repository.ProductRepository;
+import com.sprotshop.sportstore.request.BrandRequest;
 import com.sprotshop.sportstore.request.ProductRequest;
 import com.sprotshop.sportstore.request.ProductSearchRequest;
+import com.sprotshop.sportstore.response.BrandResponse;
 import com.sprotshop.sportstore.response.ProductResponse;
+import com.sprotshop.sportstore.service.BrandService;
 import com.sprotshop.sportstore.service.CloudinaryService;
 import com.sprotshop.sportstore.service.ProductCategoryService;
 import com.sprotshop.sportstore.service.ProductService;
@@ -54,6 +55,8 @@ public class ProductServiceImpl implements ProductService {
     private final ProductCategoryService productCategoryService;
     private final CloudinaryService cloudinaryService;
     private final ProductCategoryRepository productCategoryRepository;
+    private final BrandService brandService; //
+    private final BrandRepository brandRepository;
     private final ObjectMapper objectMapper; // For any JSON parsing if needed
 
     @Override
@@ -67,12 +70,23 @@ public class ProductServiceImpl implements ProductService {
         }
         log.info("Resolved category for new product: id={}, name='{}'", category.getId(), category.getName());
 
+        // 👈 Added: Resolve Brand
+        Brand brand = null;
+        if (productRequest.getBrandId() != null) {
+            brand = brandRepository.findById(productRequest.getBrandId())
+                    .orElseThrow(() -> new NotFoundException("Brand not found with ID: " + productRequest.getBrandId()));
+            log.info("Resolved brand for new product: id={}, name='{}'", brand.getId(), brand.getName());
+        } else {
+            log.warn("No brand ID provided for new product {}. Brand will be null.", productRequest.getName());
+        }
+
         Product product = Product.builder()
                 .name(productRequest.getName())
                 .description(productRequest.getDescription())
-                .price(productRequest.getPrice())
+                .price(productRequest.getPrice()) // Convert Double to BigDecimal
                 // stockQuantity will be set based on sizes
                 .productCategory(category)
+                .brand(brand) // 👈 Set Brand
                 .images(new HashSet<>())
                 .productSizes(new HashSet<>()) // Initialize productSizes set
                 .build();
@@ -122,6 +136,14 @@ public class ProductServiceImpl implements ProductService {
         product.setPrice(productRequest.getPrice());
         log.debug("Basic info updated for product id: {}", id);
 
+        // 👈 Added: Update Brand
+        if (productRequest.getBrandId() != null) {
+            Brand brand = brandRepository.findById(productRequest.getBrandId())
+                    .orElseThrow(() -> new NotFoundException("Brand not found with ID: " + productRequest.getBrandId()));
+            product.setBrand(brand);
+            log.info("Updated brand for product id={} to brand id={}", id, brand.getId());
+        }
+
         updateProductCategoryIfNeeded(product, productRequest);
         processImageDeletions(productRequest.getImageIdsToDelete(), product); // Handles existing images
         processImages(productRequest, product); // Handles new images (files or URLs, but for update, assume files)
@@ -165,7 +187,6 @@ public class ProductServiceImpl implements ProductService {
         Product fullyLoadedProduct = findProductEntityById(updatedProduct.getId());
         return ProductResponse.fromEntity(fullyLoadedProduct);
     }
-
     @Override
     @Transactional
     public void deleteProduct(Long id) throws IOException {
@@ -226,6 +247,7 @@ public class ProductServiceImpl implements ProductService {
         return ProductResponse.fromEntities(productRepository.findByProductCategory(category));
     }
 
+    // Trong ProductServiceImpl.java - method searchProducts (không thay đổi, vẫn gọi fetchBrand())
     @Override
     @Transactional(readOnly = true)
     public Page<ProductResponse> searchProducts(ProductSearchRequest searchRequest, Pageable pageable) {
@@ -251,18 +273,29 @@ public class ProductServiceImpl implements ProductService {
             spec = spec.and(ProductSpecification.byStockQuantity(searchRequest.getMinStock(), searchRequest.getMaxStock()));
         }
 
+        // 👈 Added: Lọc theo brand ID
+        if (searchRequest.getBrandId() != null) {
+            spec = spec.and(ProductSpecification.byBrandId(searchRequest.getBrandId()));
+        }
+
+        // 👈 THÊM: Fetch join brand để load eager (đã handle count query trong spec)
+        spec = spec.and(ProductSpecification.fetchBrand());
+
+        // Optional: Nếu cần sizes/images không empty trong response
+        // spec = spec.and(ProductSpecification.fetchSizesAndImages());
+
         Page<Product> products = productRepository.findAll(spec, pageable);
         log.info("Found {} products on page {} of size {} matching search criteria",
                 products.getTotalElements(), products.getNumber(), products.getSize());
         return products.map(ProductResponse::fromEntity);
     }
-
     @Override
     @Transactional
     public List<ProductResponse> importProductsFromExcel(MultipartFile excelFile) throws IOException {
         long startTime = System.currentTimeMillis();
         log.info("Starting Excel import for products: filename={}", excelFile.getOriginalFilename());
         Map<String, ProductCategory> categoryCache = new HashMap<>();
+        Map<String, Brand> brandCache = new HashMap<>(); // 👈 Added: Brand cache
         List<Product> productsToBatchSave = new ArrayList<>();
         List<ProductResponse> importedProducts = new ArrayList<>();
         try (InputStream is = excelFile.getInputStream(); Workbook workbook = new XSSFWorkbook(is)) {
@@ -284,10 +317,47 @@ public class ProductServiceImpl implements ProductService {
 
                     // Cache category
                     String catName = productRequest.getCategoryName();
-                    String key = catName.toLowerCase();
-                    ProductCategory category = categoryCache.computeIfAbsent(key, k ->
+                    String catKey = catName.toLowerCase();
+                    ProductCategory category = categoryCache.computeIfAbsent(catKey, k ->
                             productCategoryService.findOrCreateCategory(k, null, null));
                     productRequest.setCategoryId(category.getId());
+
+                    // 👈 Added: Cache brand (find or create if not exist)
+                    String brandName = productRequest.getBrandName(); // Assume parsed from row
+                    if (StringUtils.hasText(brandName)) {
+                        String brandKey = brandName.toLowerCase();
+                        Brand brand = brandCache.computeIfAbsent(brandKey, k -> {
+                            // Find existing or create new
+                            Optional<Brand> existingBrand = brandRepository.findByNameIgnoreCase(brandName);
+                            if (existingBrand.isPresent()) {
+                                log.info("Using existing brand: {}", brandName);
+                                return existingBrand.get();
+                            } else {
+                                // Create new (description and logoUrl can be null or from row if added)
+                                BrandRequest brandRequest = BrandRequest.builder()
+                                        .name(brandName)
+                                        .description(null) // Or parse from another column
+                                        .logoUrl(null) // Or parse from another column
+                                        .build();
+                                try {
+                                    // 👈 Fix: Call createBrand to get BrandResponse, then fetch entity
+                                    BrandResponse brandResp = brandService.createBrand(brandRequest);
+                                    log.info("Created new brand: {}", brandName);
+                                    // Fetch the entity from repo to return Brand (not Response)
+                                    return brandRepository.findById(brandResp.getId())
+                                            .orElseThrow(() -> new RuntimeException("Failed to fetch new brand: " + brandName));
+                                } catch (Exception e) {
+                                    log.error("Failed to create brand {}: {}", brandName, e.getMessage());
+                                    return null;
+                                }
+                            }
+                        });
+                        if (brand != null) {
+                            productRequest.setBrandId(brand.getId());
+                        }
+                    } else {
+                        log.warn("No brand name provided for row {}", i);
+                    }
 
                     // Tạo product với images từ URLs (parallel direct upload)
                     Product product = createProductFromRequest(productRequest, category);
@@ -312,14 +382,20 @@ public class ProductServiceImpl implements ProductService {
         log.info("Excel import completed in {} ms. Imported {} products.", endTime - startTime, importedProducts.size());
         return importedProducts;
     }
-
     // Helper: Tạo product từ request (gọi processImageUploads + sizes) - for Excel, uses URLs
     private Product createProductFromRequest(ProductRequest request, ProductCategory category) throws IOException {
+        // 👈 Added: Resolve Brand in createFromRequest
+        Brand brand = null;
+        if (request.getBrandId() != null) {
+            brand = brandRepository.findById(request.getBrandId()).orElse(null);
+        }
+
         Product product = Product.builder()
                 .name(request.getName())
                 .description(request.getDescription())
                 .price(request.getPrice())
                 .productCategory(category)
+                .brand(brand)
                 .images(new HashSet<>())
                 .productSizes(new HashSet<>())
                 .build();
@@ -517,7 +593,7 @@ public class ProductServiceImpl implements ProductService {
         ProductRequest request = ProductRequest.builder()
                 .name(name)
                 .description(description)
-                .price(priceBd != null ? priceBd.doubleValue() : null)
+                .price(priceBd != null ? priceBd : null)
                 .categoryName(categoryName)
                 .imageUrls(imageUrls)  // Set URLs for Excel
                 .build();

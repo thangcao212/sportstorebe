@@ -3,10 +3,10 @@ server:
 
 spring:
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/sportstore}
+    url: jdbc:mysql://localhost:3306/sportstore
     driver-class-name: com.mysql.cj.jdbc.Driver
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:password123}
+    username: root
+    password: password123
 
   jpa:
     hibernate:
@@ -16,10 +16,10 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
         jdbc:
-           batch_size: 50  # Batch insert size
-        order_inserts: true  # Order INSERT for batch
-        order_updates: true  # Order UPDATE for batch
-        flush_mode: COMMIT  # Flush only at commit, not auto
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+        flush_mode: COMMIT
 
   servlet:
     multipart:
@@ -35,17 +35,19 @@ spring:
 
   data:
     redis:
-      host: ${SPRING_DATA_REDIS_HOST:localhost}
-      port: ${SPRING_DATA_REDIS_PORT:6379}
+      host: localhost
+      port: 6379
 
   security:
     oauth2:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID}
-            client-secret: ${GOOGLE_CLIENT_SECRET}
-            scope: openid,profile,email
+
+            scope:
+              - openid
+              - profile
+              - email
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
         provider:
           google:
@@ -55,7 +57,7 @@ spring:
             user-name-attribute: sub
 
 jwt:
-  secret-key: ${JWT_SECRET_KEY:thanggdev123456789thanggdev123456789}
+  secret-key: thanggdev123456789thanggdev123456789
 
 sepay:
   bank:

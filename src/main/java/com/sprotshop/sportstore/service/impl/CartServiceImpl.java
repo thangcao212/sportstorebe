@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
+import java.math.BigDecimal; // 👈 Added import
 import java.util.*;
 
 @Service
@@ -204,9 +205,12 @@ public class CartServiceImpl implements CartService {
                 if (product != null) {
                     String imageUrl = (!CollectionUtils.isEmpty(product.getImages())) ?
                             product.getImages().stream().findFirst().map(image -> image.getImageUrl()).orElse(null) : null;
-                    double itemPrice = Optional.ofNullable(product.getPrice()).orElse(0.0);
+                    // 👈 Fix: Use BigDecimal.ZERO for orElse
+                    double itemPrice = Optional.ofNullable(product.getPrice()).orElse(BigDecimal.ZERO).doubleValue();
                     int quantity = Optional.ofNullable(item.getQuantity()).orElse(0);
-                    double itemTotalPrice = itemPrice * quantity;
+                    // 👈 Fix: Use BigDecimal for multiplication
+                    double itemTotalPrice = Optional.ofNullable(product.getPrice()).orElse(BigDecimal.ZERO)
+                            .multiply(BigDecimal.valueOf(quantity)).doubleValue();
                     totalPrice += itemTotalPrice;
                     totalItems += quantity;
                     itemResponses.add(CartItemResponse.builder()
@@ -216,7 +220,7 @@ public class CartServiceImpl implements CartService {
                             .productImageUrl(imageUrl)
                             .quantity(quantity)
                             .price(itemPrice)
-                                    .size(item.getSize())
+                            .size(item.getSize())
                             .itemTotalPrice(itemTotalPrice)
                             .build());
                 }

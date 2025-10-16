@@ -1,5 +1,3 @@
-// Updated OrderServiceImpl.java - Changed SEPAY timeout from 24 hours to 5 minutes for testing.
-// Scheduler now runs every 5 minutes to check timeouts more frequently.
 package com.sprotshop.sportstore.service.impl;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
@@ -65,11 +63,10 @@ public class OrderServiceImpl implements OrderService {
     private final ProductSizeRepository productSizeRepository;
     private final TransactionRepository transactionRepository;
     private final TransactionService transactionService;
+    private final UserRepository userRepository;
 
     private static final long WAITING_TIMEOUT_MINUTES = 5;  // 5 minutes for testing SEPAY
     private static final long COMPLETE_AFTER_DAYS = 7;
-
-
 
     @Override
     @Transactional
@@ -79,13 +76,6 @@ public class OrderServiceImpl implements OrderService {
             User currentUser = userService.getCurrentLoggedInUser();
             Long userId = currentUser.getId();
             log.info("Creating order for userId: {}", userId);
-
-            Province province = provinceRepository.findById(request.getProvinceCode())
-                    .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ: " + request.getProvinceCode()));
-            District district = districtRepository.findById(request.getDistrictCode())
-                    .orElseThrow(() -> new NotFoundException("Mã huyện không hợp lệ: " + request.getDistrictCode()));
-            Ward ward = wardRepository.findById(request.getWardCode())
-                    .orElseThrow(() -> new NotFoundException("Mã xã không hợp lệ: " + request.getWardCode()));
 
             Cart cart = cartRepository.findByUserId(userId)
                     .orElseThrow(() -> new NotFoundException("Không tìm thấy giỏ hàng cho user ID: " + userId));
@@ -112,7 +102,8 @@ public class OrderServiceImpl implements OrderService {
                         throw new IllegalStateException("Sản phẩm hết hàng cho kích thước " + size + ": " + product.getName());
                     }
 
-                    BigDecimal price = BigDecimal.valueOf(product.getPrice());
+                    // 👈 Fix: Direct assignment since price is already BigDecimal
+                    BigDecimal price = product.getPrice();
                     productSizeQuantityMap.put(productSizeKey, quantity);
                     priceAtOrderMap.put(productSizeKey, price);
                     totalAmount = totalAmount.add(price.multiply(BigDecimal.valueOf(quantity)));
@@ -123,15 +114,39 @@ public class OrderServiceImpl implements OrderService {
                 }
             }
 
-            String fullAddress = String.format("%s, %s, %s, %s", request.getStreet(), ward.getName(), district.getName(), province.getName());
-            Address address = Address.builder()
-                    .provinceCode(request.getProvinceCode())
-                    .districtCode(request.getDistrictCode())
-                    .wardCode(request.getWardCode())
-                    .street(request.getStreet())
-                    .fullAddress(fullAddress)
-                    .build();
-            addressRepository.save(address);
+            // 👈 Xử lý Address: Ưu tiên dùng existing nếu có addressId, fallback tạo mới và link với user
+            Address address;
+            if (request.getAddressId() != null) {
+                // Tìm existing address của user
+                address = addressRepository.findByIdAndUserId(request.getAddressId(), userId)
+                        .orElseThrow(() -> new NotFoundException("Địa chỉ không tồn tại hoặc không thuộc user: " + request.getAddressId()));
+                log.info("Used existing address ID: {} for order", request.getAddressId());
+            } else {
+                // Tạo mới: Validate codes, build fullAddress, link user
+                Province province = provinceRepository.findById(request.getProvinceCode())
+                        .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ: " + request.getProvinceCode()));
+                District district = districtRepository.findById(request.getDistrictCode())
+                        .orElseThrow(() -> new NotFoundException("Mã huyện không hợp lệ: " + request.getDistrictCode()));
+                Ward ward = wardRepository.findById(request.getWardCode())
+                        .orElseThrow(() -> new NotFoundException("Mã xã không hợp lệ: " + request.getWardCode()));
+
+                String fullAddress = String.format("%s, %s, %s, %s", request.getStreet(), ward.getName(), district.getName(), province.getName());
+                address = Address.builder()
+                        .provinceCode(request.getProvinceCode())
+                        .districtCode(request.getDistrictCode())
+                        .wardCode(request.getWardCode())
+                        .street(request.getStreet())
+                        .fullAddress(fullAddress)
+                        .user(currentUser)  // 👈 Link với user
+                        .build();
+                addressRepository.save(address);
+                currentUser.addAddress(address);  // 👈 Thêm vào list (nếu có method addAddress trong User)
+                userRepository.save(currentUser);  // Sync list
+                log.info("Created and linked new address for user: {}", userId);
+            }
+
+            // 👈 NEW: Snapshot full address lúc tạo (immutable cho lịch sử, không ảnh hưởng logic khác)
+            String snapshotAddress = address.getFullAddress();
 
             // Gán trạng thái dựa trên paymentMethod
             // Set initial status based on flow
@@ -142,8 +157,10 @@ public class OrderServiceImpl implements OrderService {
             Order order = Order.builder()
                     .user(currentUser)
                     .address(address)
+                    .deliveryAddress(snapshotAddress)  // 👈 Set snapshot (no logic change)
                     .totalAmount(totalAmount)
                     .status(initialStatus)
+                    .orderStatus(initialStatus)  // 👈 Set orderStatus same as status (as per original logic, adjust if needed)
                     .paymentMethod(request.getPaymentMethod())
                     .paymentStatus(initialPaymentStatus)
 
@@ -217,6 +234,9 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findByIdAndUserId(orderId, currentUser.getId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
         Hibernate.initialize(order.getOrderItems());
+
+        // 👈 NEW: For immutable display, OrderResponse should prioritize deliveryAddress over address.fullAddress
+        // (Assume OrderResponse.fromEntity handles this, e.g., if fullAddress is from deliveryAddress)
         return OrderResponse.fromEntity(order);
     }
 
@@ -291,7 +311,7 @@ public class OrderServiceImpl implements OrderService {
         return valid;
     }
 
-    // 3. UPDATE STATUS (Generic, uses validation)
+    // 3. UPDATE STATUS (Generic, uses validation) - FIXED: Auto-confirm COD payment khi set DELIVERED
     @Override
     @Transactional
     @CacheEvict(value = {"userOrders", "allOrders"}, allEntries = true)
@@ -300,14 +320,22 @@ public class OrderServiceImpl implements OrderService {
             Order order = orderRepository.findById(orderId)
                     .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
 
-            // FIX: Auto-confirm COD payment if transitioning DELIVERED -> COMPLETED and PENDING
+            // NEW: Auto-confirm COD payment khi set DELIVERED (nếu đang PENDING) - FIX cho flow COD
+            if (order.getPaymentMethod() == PaymentMethod.COD &&
+                    newStatus == OrderStatus.DELIVERED &&
+                    order.getPaymentStatus() == PaymentStatus.PENDING) {
+                order.setPaymentStatus(PaymentStatus.PAID);
+                log.info("Auto-confirmed COD payment for order {} during status update to DELIVERED", orderId);
+            }
+
+            // EXISTING: Auto-confirm COD payment if transitioning DELIVERED -> COMPLETED and PENDING
             if (order.getStatus() == OrderStatus.DELIVERED && newStatus == OrderStatus.COMPLETED &&
                     order.getPaymentMethod() == PaymentMethod.COD && order.getPaymentStatus() == PaymentStatus.PENDING) {
                 order.setPaymentStatus(PaymentStatus.PAID);
                 log.info("Auto-confirmed COD payment for order {} during status update to COMPLETED", orderId);
             }
 
-            // NEW FIX: Auto-confirm SEPAY payment if transitioning WAITING_FOR_PAYMENT -> PROCESSING and PENDING
+            // EXISTING: Auto-confirm SEPAY payment if transitioning WAITING_FOR_PAYMENT -> PROCESSING and PENDING
             if (order.getStatus() == OrderStatus.WAITING_FOR_PAYMENT && newStatus == OrderStatus.PROCESSING &&
                     order.getPaymentMethod() == PaymentMethod.SEPAY && order.getPaymentStatus() == PaymentStatus.PENDING) {
                 order.setPaymentStatus(PaymentStatus.PAID);
@@ -316,6 +344,7 @@ public class OrderServiceImpl implements OrderService {
 
             validateTransition(order, newStatus, null);
             order.setStatus(newStatus);
+            order.setOrderStatus(newStatus);  // 👈 Sync orderStatus with status (as per original logic, adjust if needed)
             Hibernate.initialize(order.getOrderItems());
             return OrderResponse.fromEntity(orderRepository.save(order));
         } catch (InvalidOrderTransitionException e) {
@@ -339,6 +368,7 @@ public class OrderServiceImpl implements OrderService {
             }
             validateTransition(order, OrderStatus.PROCESSING, null);
             order.setStatus(OrderStatus.PROCESSING);
+            order.setOrderStatus(OrderStatus.PROCESSING);  // 👈 Sync
             return OrderResponse.fromEntity(orderRepository.save(order));
         } catch (Exception e) {
             log.error("Confirm processing failed for order {}: {}", orderId, e.getMessage());
@@ -362,6 +392,7 @@ public class OrderServiceImpl implements OrderService {
             // Validate and set COMPLETED
             validateTransition(order, OrderStatus.COMPLETED, null);
             order.setStatus(OrderStatus.COMPLETED);
+            order.setOrderStatus(OrderStatus.COMPLETED);  // 👈 Sync
             Hibernate.initialize(order.getOrderItems());
             return OrderResponse.fromEntity(orderRepository.save(order));
         } catch (Exception e) {
@@ -387,6 +418,7 @@ public class OrderServiceImpl implements OrderService {
 
             restoreStock(order);
             order.setStatus(OrderStatus.CANCELED);
+            order.setOrderStatus(OrderStatus.CANCELED);  // 👈 Sync
             order.setPaymentStatus(PaymentStatus.CANCELLED);
             return OrderResponse.fromEntity(orderRepository.save(order));
         } catch (InvalidOrderTransitionException e) {
@@ -457,6 +489,7 @@ public class OrderServiceImpl implements OrderService {
             // Then validate PROCESSING (uses new PAID)
             validateTransition(order, OrderStatus.PROCESSING, null);
             order.setStatus(OrderStatus.PROCESSING);
+            order.setOrderStatus(OrderStatus.PROCESSING);  // 👈 Sync
             orderRepository.save(order);
             log.info("SUCCESS: Updated order {} to PAID/PROCESSING via webhook", orderId);
         } catch (InvalidOrderTransitionException e) {
@@ -466,9 +499,6 @@ public class OrderServiceImpl implements OrderService {
             throw e;
         }
     }
-
-
-
 
     // 10. HELPER: Restore Stock (Safe with error handling)
     private void restoreStock(Order order) {
@@ -506,6 +536,7 @@ public class OrderServiceImpl implements OrderService {
             if (order.getStatus() == OrderStatus.PROCESSING) {
                 validateTransition(order, OrderStatus.SHIPPED, null);
                 order.setStatus(OrderStatus.SHIPPED);
+                order.setOrderStatus(OrderStatus.SHIPPED);  // 👈 Sync
             }
             Hibernate.initialize(order.getOrderItems());
             return OrderResponse.fromEntity(orderRepository.save(order));
@@ -515,8 +546,6 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-
-
     @Override
     public List<OrderResponse> getOrdersByUser(Long userId) {
         List<Order> orders = orderRepository.findByUserId(userId);
@@ -524,7 +553,6 @@ public class OrderServiceImpl implements OrderService {
                 .map(OrderResponse::fromEntity)
                 .collect(Collectors.toList());
     }
-
 
     @Override
     public List<Map<String, String>> getUniqueUserEmails() {
@@ -571,6 +599,7 @@ public class OrderServiceImpl implements OrderService {
 
                     // Set statuses
                     order.setStatus(OrderStatus.CANCELED);
+                    order.setOrderStatus(OrderStatus.CANCELED);  // 👈 Sync
                     order.setPaymentStatus(PaymentStatus.CANCELLED);
 
                     // Restore stock
@@ -612,6 +641,7 @@ public class OrderServiceImpl implements OrderService {
                 try {
                     if (order.getStatus().canTransitionTo(OrderStatus.COMPLETED, order.getPaymentMethod(), order.getPaymentStatus())) {
                         order.setStatus(OrderStatus.COMPLETED);
+                        order.setOrderStatus(OrderStatus.COMPLETED);  // 👈 Sync
                         orderRepository.save(order);
                         log.info("Auto-completed old DELIVERED order: {}", order.getId());
                     } else {

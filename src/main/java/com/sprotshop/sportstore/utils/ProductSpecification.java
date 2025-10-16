@@ -3,6 +3,7 @@ package com.sprotshop.sportstore.utils;
 import com.sprotshop.sportstore.entity.Product;
 import org.springframework.data.jpa.domain.Specification;
 
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import java.util.ArrayList;
 import java.util.List;
@@ -84,6 +85,44 @@ public class ProductSpecification {
                 predicates.add(cb.lessThanOrEqualTo(root.get("stockQuantity"), maxStock));
             }
             return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+
+    /**
+     * 👈 Added: Lọc theo brand ID
+     */
+    public static Specification<Product> byBrandId(Long brandId) {
+        return (root, query, cb) -> {
+            if (brandId == null) {
+                return cb.conjunction();
+            }
+            return cb.equal(root.get("brand").get("id"), brandId);
+        };
+    }
+
+    /**
+     * Fetch join cho brand để tránh lazy loading issue trong paginated search
+     * Chỉ apply fetch cho data query (không phải count query)
+     */
+    public static Specification<Product> fetchBrand() {
+        return (root, query, cb) -> {
+            // Chỉ fetch cho main data query (resultType != Long.class), không phải count query
+            if (!Long.class.equals(query.getResultType())) {
+                root.fetch("brand", JoinType.LEFT);
+            }
+            // For count query: Không cần join/fetch vì không có predicate trên brand
+            return cb.conjunction();  // Không thêm where clause
+        };
+    }
+
+    // Optional: Nếu cần fetch sizes/images luôn (tránh empty list nếu lazy)
+    public static Specification<Product> fetchSizesAndImages() {
+        return (root, query, cb) -> {
+            if (!Long.class.equals(query.getResultType())) {
+                root.fetch("productSizes", JoinType.LEFT);
+                root.fetch("images", JoinType.LEFT);
+            }
+            return cb.conjunction();
         };
     }
 }
