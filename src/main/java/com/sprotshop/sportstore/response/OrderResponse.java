@@ -1,8 +1,11 @@
-// Updated OrderResponse.java - Added fields for originalTotalAmount, discountAmount, couponCode
+// Updated OrderResponse.java - Added shippingFee field for response
+// (Add to existing OrderResponse class)
+
 package com.sprotshop.sportstore.response;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
 import com.sprotshop.sportstore.Enum.PaymentMethod;
+import com.sprotshop.sportstore.entity.Coupon;
 import com.sprotshop.sportstore.entity.Order;
 import lombok.*;
 import java.math.BigDecimal;
@@ -24,6 +27,7 @@ public class OrderResponse {
     private BigDecimal originalTotalAmount;  // NEW: Before discount
     private BigDecimal discountAmount;  // NEW: Discount applied
     private String couponCode;  // NEW: Coupon code used
+    private BigDecimal shippingFee;  // NEW: Shipping fee
     private PaymentMethod paymentMethod;
     private String paymentStatus;
     private String trackingNumber;
@@ -36,6 +40,7 @@ public class OrderResponse {
     private List<OrderItemDTO> items;
     private String qrCodeUrl; // For SEPAY
     private Map<String, Object> bankInfo;
+
 
     // Setter for bankInfo
     public void setBankInfo(Map<String, Object> bankInfo) {
@@ -55,6 +60,10 @@ public class OrderResponse {
         this.couponCode = couponCode;
     }
 
+    public void setShippingFee(BigDecimal shippingFee) {
+        this.shippingFee = shippingFee;
+    }
+
     public static OrderResponse fromEntity(Order order) {
         return OrderResponse.builder()
                 .orderId(order.getId())
@@ -65,9 +74,10 @@ public class OrderResponse {
                 .orderDate(order.getCreatedAt())
                 .status(order.getStatus())
                 .totalAmount(order.getTotalAmount())
-                .originalTotalAmount(null)  // Set in service if available
-                .discountAmount(BigDecimal.ZERO)  // Set in service
-                .couponCode(order.getCoupon() != null ? order.getCoupon().getCode() : null)
+                .originalTotalAmount(order.getOriginalTotalAmount())  // 👈 NEW: From entity
+                .discountAmount(order.getDiscountAmount())  // 👈 NEW: From entity
+                .shippingFee(order.getShippingFee())  // 👈 NEW: Set from entity
+                .couponCode(order.getCoupon() != null ? order.getCoupon().getCode() : null)  // Hoặc "" nếu muốn empty string
                 .paymentMethod(order.getPaymentMethod())
                 .paymentStatus(order.getPaymentStatus().name())
                 .trackingNumber(order.getTrackingNumber())
@@ -92,4 +102,5 @@ public class OrderResponse {
                         : Collections.emptyList())
                 .build();
     }
+
 }

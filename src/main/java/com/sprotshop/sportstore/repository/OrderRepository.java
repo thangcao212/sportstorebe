@@ -110,8 +110,7 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     @Query("SELECT o FROM Order o WHERE o.status = :status AND o.createdAt < :threshold")
     List<Order> findByStatusAndCreatedAtBefore(@Param("status") OrderStatus status, @Param("threshold") LocalDateTime threshold);
 
-    @Query("SELECT COUNT(o) FROM Order o WHERE o.user.id = :userId AND o.coupon.id = :couponId AND o.status = :status")
-    long countByUserIdAndCouponIdAndStatus(@Param("userId") Long userId, @Param("couponId") Long couponId, @Param("status") OrderStatus status);
+    long countByUserIdAndCouponIdAndStatus(Long userId, Long couponId, OrderStatus status);
 
     long countByAddressId(Long addressId);
 }

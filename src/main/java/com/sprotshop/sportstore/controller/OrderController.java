@@ -28,7 +28,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
@@ -36,10 +38,10 @@ import org.springframework.ui.Model;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -444,6 +446,67 @@ public class OrderController {
                             .message("Error fetching possible statuses")
                             .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                             .build());
+        }
+    }
+
+    @GetMapping("/export/excel")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<byte[]> exportOrdersToExcel(
+            @RequestParam(required = false) Double minTotalAmount,
+            @RequestParam(required = false) Double maxTotalAmount,
+            @RequestParam(required = false) String status,  // e.g., "PENDING,PROCESSING"
+            @RequestParam(required = false) String paymentMethod,  // e.g., "COD,SEPAY"
+            @RequestParam(required = false) Integer provinceCode,
+            @RequestParam(required = false) Integer districtCode,
+            @RequestParam(required = false) Integer wardCode,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String emails,  // comma-separated
+            @RequestParam(required = false) Long productId,
+            @RequestParam(required = false) String startDate,  // yyyy-MM-dd HH:mm
+            @RequestParam(required = false) String endDate) {  // yyyy-MM-dd HH:mm
+
+        // Build OrderSearchRequest from query params
+        OrderSearchRequest request = new OrderSearchRequest();
+        request.setMinTotalAmount(minTotalAmount);
+        request.setMaxTotalAmount(maxTotalAmount);
+        if (status != null && !status.isBlank()) {
+            request.setStatus(Arrays.stream(status.split(","))
+                    .map(OrderStatus::valueOf)
+                    .collect(Collectors.toList()));
+        }
+        if (paymentMethod != null && !paymentMethod.isBlank()) {
+            request.setPaymentMethod(Arrays.stream(paymentMethod.split(","))
+                    .map(PaymentMethod::valueOf)
+                    .collect(Collectors.toList()));
+        }
+        request.setProvinceCode(provinceCode);
+        request.setDistrictCode(districtCode);
+        request.setWardCode(wardCode);
+        request.setSearch(search);
+        if (emails != null && !emails.isBlank()) {
+            request.setEmails(Arrays.asList(emails.split(",")));
+        }
+        request.setProductId(productId);
+        if (startDate != null && !startDate.isBlank()) {
+            request.setStartDate(LocalDateTime.parse(startDate, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
+        }
+        if (endDate != null && !endDate.isBlank()) {
+            request.setEndDate(LocalDateTime.parse(endDate, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
+        }
+
+        try {
+            byte[] excelBytes = orderService.exportOrdersToExcel(request);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            headers.setContentDispositionFormData("attachment", "orders_export_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".xlsx");
+            headers.setContentLength(excelBytes.length);
+
+            return new ResponseEntity<>(excelBytes, headers, HttpStatus.OK);
+        } catch (Exception e) {
+            log.error("Excel export failed: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(null);  // Or handle with ApiResponse if needed
         }
     }
 }

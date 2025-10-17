@@ -582,6 +582,7 @@ public class ProductServiceImpl implements ProductService {
         String sizesStr = getCellValueAsString(row.getCell(4));
         String stockQuantitiesStr = getCellValueAsString(row.getCell(5));
 
+
         // Parse imageUrls (cột G)
         String imageUrlsStr = getCellValueAsString(row.getCell(6));
         List<String> imageUrls = StringUtils.hasText(imageUrlsStr)
@@ -590,12 +591,15 @@ public class ProductServiceImpl implements ProductService {
                 .collect(Collectors.toList())
                 : new ArrayList<>();
 
+        String brandName = getCellValueAsString(row.getCell(7));
+
         ProductRequest request = ProductRequest.builder()
                 .name(name)
                 .description(description)
                 .price(priceBd != null ? priceBd : null)
                 .categoryName(categoryName)
                 .imageUrls(imageUrls)  // Set URLs for Excel
+                .brandName(brandName)
                 .build();
 
         int totalStock = 0;

@@ -18,13 +18,13 @@ public class Address {
     private Long id;
 
     @Column(name = "province_code")
-    private int provinceCode;
+    private Integer provinceCode;
 
     @Column(name = "district_code")
-    private int districtCode;
+    private Integer districtCode;
 
     @Column(name = "ward_code")
-    private int wardCode;
+    private Integer wardCode;
 
     private String street;
 

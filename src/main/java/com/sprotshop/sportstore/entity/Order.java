@@ -1,5 +1,4 @@
-
-        package com.sprotshop.sportstore.entity;
+package com.sprotshop.sportstore.entity;
 
 import com.sprotshop.sportstore.Enum.CouponType;
 import com.sprotshop.sportstore.Enum.OrderStatus;
@@ -8,7 +7,6 @@ import com.sprotshop.sportstore.Enum.PaymentStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -28,68 +26,73 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "user_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @Column(name = "shipping_recipient_name", length = 255)
     private String shippingRecipientName;
+
+    @Column(name = "shipping_phone", length = 20)
     private String shippingPhone;
 
-    @OneToOne(cascade = CascadeType.ALL)
-    @JoinColumn(name = "address_id")
+    @OneToOne(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JoinColumn(name = "address_id", nullable = false)
     private Address address;
 
-    // 👈 NEW: Snapshot of full address at order creation (immutable for history)
     @Column(name = "delivery_address", length = 500)
     private String deliveryAddress;
 
-    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     private List<OrderItem> orderItems = new ArrayList<>();
 
+    @Column(name = "total_amount", precision = 15, scale = 2, nullable = false)
     private BigDecimal totalAmount;
-    @Column(name = "status")
+
+    @Column(name = "original_total_amount", precision = 15, scale = 2)
+    private BigDecimal originalTotalAmount;
+
+    @Column(name = "discount_amount", precision = 15, scale = 2)
+    private BigDecimal discountAmount;
+
+    @Column(name = "shipping_fee", precision = 15, scale = 2, nullable = false)
+    private BigDecimal shippingFee = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
     private OrderStatus status;
 
-    @Column(name = "payment_method")
     @Enumerated(EnumType.STRING)
-    private PaymentMethod paymentMethod;
-
-    @Column(name = "payment_status")
-    @Enumerated(EnumType.STRING)
-    private PaymentStatus paymentStatus;
-
-    @Column(name="order_status")
-    @Enumerated(EnumType.STRING)
+    @Column(name = "order_status", nullable = false)
     private OrderStatus orderStatus;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", nullable = false)
+    private PaymentMethod paymentMethod;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_status", nullable = false)
+    private PaymentStatus paymentStatus;
+
+    @Column(name = "tracking_number", length = 100)
     private String trackingNumber;
+
+    @Column(name = "notes", length = 500)
     private String notes;
 
     @Column(name = "created_at")
+    @CreationTimestamp
     private LocalDateTime createdAt;
 
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-    }
-
-    // Thêm Coupon
+    // 👈 SINGLE: Keep @ManyToOne for single coupon
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "coupon_id")
     private Coupon coupon;
 
-    // ShippingFee (đã có từ trước, nhưng cập nhật helper cho free ship)
-    @Column(name = "shipping_fee", precision = 15, scale = 2)
-    private BigDecimal shippingFee = BigDecimal.ZERO;  // Default 0, tính ở service
-
-    // Helper method tính total (cập nhật để include coupon & ship)
+    // Helper to calculate total (single coupon)
     public BigDecimal getTotalAmount() {
         BigDecimal itemsTotal = orderItems.stream()
-                .map(item -> {
-                    BigDecimal price = (item.getPrice() != null ? item.getPrice() : BigDecimal.ZERO);
-                    return price.multiply(BigDecimal.valueOf(item.getQuantity()));
-                })
+                .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal discount = BigDecimal.ZERO;
@@ -98,19 +101,22 @@ public class Order {
                 discount = (coupon.getDiscountAmount() != null ? coupon.getDiscountAmount() : BigDecimal.ZERO);
             } else {
                 BigDecimal percentage = (coupon.getDiscountPercentage() != null ? coupon.getDiscountPercentage() : BigDecimal.ZERO);
-                discount = itemsTotal.multiply(percentage.divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));  // Thêm scale/rounding để an toàn
+                discount = itemsTotal.multiply(percentage.divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
             }
         }
 
-        BigDecimal shipFee = (shippingFee != null ? shippingFee : BigDecimal.ZERO);
-        return itemsTotal.add(shipFee).subtract(discount);
+        return itemsTotal.add(shippingFee).subtract(discount);
     }
 
-    // Helper để apply coupon
+    // Helper for single coupon
     public void applyCoupon(Coupon coupon) {
         this.coupon = coupon;
         if (coupon != null && !coupon.getOrders().contains(this)) {
             coupon.getOrders().add(this);
         }
+    }
+
+    public void syncStatuses() {
+        this.orderStatus = this.status;
     }
 }

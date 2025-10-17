@@ -6,17 +6,17 @@ import com.sprotshop.sportstore.Enum.PaymentStatus;
 import com.sprotshop.sportstore.entity.*;
 import com.sprotshop.sportstore.exception.*;
 import com.sprotshop.sportstore.repository.*;
+import com.sprotshop.sportstore.request.ApplyCouponRequest;
 import com.sprotshop.sportstore.request.CreateOrderRequest;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
 import com.sprotshop.sportstore.request.SepayWebhookRequest;
 import com.sprotshop.sportstore.response.OrderResponse;
 import com.sprotshop.sportstore.response.PageResponse;
-import com.sprotshop.sportstore.service.CartService;
-import com.sprotshop.sportstore.service.OrderService;
-import com.sprotshop.sportstore.service.TransactionService;
-import com.sprotshop.sportstore.service.UserService;
+import com.sprotshop.sportstore.service.*;
 import com.sprotshop.sportstore.utils.OrderSpecification;
 import lombok.RequiredArgsConstructor;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,9 +31,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -64,15 +66,26 @@ public class OrderServiceImpl implements OrderService {
     private final TransactionRepository transactionRepository;
     private final TransactionService transactionService;
     private final UserRepository userRepository;
+    private final CouponService couponService;  // NEW: For applyCoupon
+    private final CouponRepository couponRepository;
 
     private static final long WAITING_TIMEOUT_MINUTES = 5;  // 5 minutes for testing SEPAY
     private static final long COMPLETE_AFTER_DAYS = 7;
+
+    private BigDecimal calculateShippingFee(Integer provinceCode) {
+        // Assume provinceCode 1-10 = inner province (Hanoi/HCMC), others outer
+        if (provinceCode != null && provinceCode >= 1 && provinceCode <= 10) {
+            return new BigDecimal("20000");  // 20k inner
+        } else {
+            return new BigDecimal("30000");  // 30k outer
+        }
+    }
 
     @Override
     @Transactional
     @CacheEvict(value = {"userOrders", "allOrders"}, key = "#userService.getCurrentLoggedInUser().id + '-*'", allEntries = true)
     public OrderResponse createOrderFromCart(CreateOrderRequest request) {
-        try{
+        try {
             User currentUser = userService.getCurrentLoggedInUser();
             Long userId = currentUser.getId();
             log.info("Creating order for userId: {}", userId);
@@ -86,7 +99,7 @@ public class OrderServiceImpl implements OrderService {
 
             Map<String, Integer> productSizeQuantityMap = new HashMap<>();
             Map<String, BigDecimal> priceAtOrderMap = new HashMap<>();
-            BigDecimal totalAmount = BigDecimal.ZERO;
+            BigDecimal itemsTotal = BigDecimal.ZERO;
             Map<String, Integer> stockUpdates = new HashMap<>();
 
             for (CartItem cartItem : cart.getCartItems()) {
@@ -102,27 +115,26 @@ public class OrderServiceImpl implements OrderService {
                         throw new IllegalStateException("Sản phẩm hết hàng cho kích thước " + size + ": " + product.getName());
                     }
 
-                    // 👈 Fix: Direct assignment since price is already BigDecimal
                     BigDecimal price = product.getPrice();
                     productSizeQuantityMap.put(productSizeKey, quantity);
                     priceAtOrderMap.put(productSizeKey, price);
-                    totalAmount = totalAmount.add(price.multiply(BigDecimal.valueOf(quantity)));
+                    itemsTotal = itemsTotal.add(price.multiply(BigDecimal.valueOf(quantity)));
                     stockUpdates.put(productSizeKey, quantity);
                 } catch (NotFoundException | IllegalStateException e) {
                     log.warn("Stock check failed for cartItem {}: {}", cartItem.getId(), e.getMessage());
-                    throw e;  // Fail fast
+                    throw e;
                 }
             }
 
-            // 👈 Xử lý Address: Ưu tiên dùng existing nếu có addressId, fallback tạo mới và link với user
+            // Handle Address
             Address address;
+            Integer provinceCodeForShip;
             if (request.getAddressId() != null) {
-                // Tìm existing address của user
                 address = addressRepository.findByIdAndUserId(request.getAddressId(), userId)
                         .orElseThrow(() -> new NotFoundException("Địa chỉ không tồn tại hoặc không thuộc user: " + request.getAddressId()));
+                provinceCodeForShip = address.getProvinceCode();
                 log.info("Used existing address ID: {} for order", request.getAddressId());
             } else {
-                // Tạo mới: Validate codes, build fullAddress, link user
                 Province province = provinceRepository.findById(request.getProvinceCode())
                         .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ: " + request.getProvinceCode()));
                 District district = districtRepository.findById(request.getDistrictCode())
@@ -137,19 +149,45 @@ public class OrderServiceImpl implements OrderService {
                         .wardCode(request.getWardCode())
                         .street(request.getStreet())
                         .fullAddress(fullAddress)
-                        .user(currentUser)  // 👈 Link với user
+                        .user(currentUser)
                         .build();
                 addressRepository.save(address);
-                currentUser.addAddress(address);  // 👈 Thêm vào list (nếu có method addAddress trong User)
-                userRepository.save(currentUser);  // Sync list
+                currentUser.addAddress(address);
+                userRepository.save(currentUser);
+                provinceCodeForShip = request.getProvinceCode();
                 log.info("Created and linked new address for user: {}", userId);
             }
 
-            // 👈 NEW: Snapshot full address lúc tạo (immutable cho lịch sử, không ảnh hưởng logic khác)
             String snapshotAddress = address.getFullAddress();
 
-            // Gán trạng thái dựa trên paymentMethod
-            // Set initial status based on flow
+            BigDecimal shippingFee = calculateShippingFee(provinceCodeForShip);
+            log.info("Calculated shipping fee: {} for provinceCode: {}", shippingFee, provinceCodeForShip);
+
+            BigDecimal orderTotalForCoupon = itemsTotal.add(shippingFee);
+            BigDecimal originalTotalAmount = orderTotalForCoupon;
+            BigDecimal discountAmount = BigDecimal.ZERO;
+            String appliedCouponCode = null;
+            Coupon appliedCoupon = null;
+
+            // 👈 FIXED: Apply single coupon (first valid from list if multiple sent)
+            if (StringUtils.hasText(request.getCouponCode())) {
+                try {
+                    ApplyCouponRequest applyReq = ApplyCouponRequest.builder()
+                            .code(request.getCouponCode().trim().toUpperCase())
+                            .orderTotal(orderTotalForCoupon)
+                            .build();
+                    discountAmount = couponService.applyCoupon(applyReq);
+                    appliedCouponCode = request.getCouponCode().trim();
+                    appliedCoupon = couponRepository.findByCode(applyReq.getCode())
+                            .orElseThrow(() -> new NotFoundException("Không tìm thấy coupon: " + applyReq.getCode()));
+                    log.info("Coupon applied: code={}, discount={}", appliedCouponCode, discountAmount);
+                } catch (NotFoundException | InvalidCouponException e) {
+                    log.warn("Coupon apply failed (continue without): {}", e.getMessage());
+                }
+            }
+
+            BigDecimal totalAmount = orderTotalForCoupon.subtract(discountAmount);
+
             OrderStatus initialStatus = (request.getPaymentMethod() == PaymentMethod.SEPAY)
                     ? OrderStatus.WAITING_FOR_PAYMENT : OrderStatus.PENDING;
             PaymentStatus initialPaymentStatus = PaymentStatus.PENDING;
@@ -157,19 +195,25 @@ public class OrderServiceImpl implements OrderService {
             Order order = Order.builder()
                     .user(currentUser)
                     .address(address)
-                    .deliveryAddress(snapshotAddress)  // 👈 Set snapshot (no logic change)
+                    .deliveryAddress(snapshotAddress)
                     .totalAmount(totalAmount)
+                    .originalTotalAmount(originalTotalAmount)
+                    .discountAmount(discountAmount)
+                    .shippingFee(shippingFee)
                     .status(initialStatus)
-                    .orderStatus(initialStatus)  // 👈 Set orderStatus same as status (as per original logic, adjust if needed)
+                    .orderStatus(initialStatus)
                     .paymentMethod(request.getPaymentMethod())
                     .paymentStatus(initialPaymentStatus)
-
                     .shippingRecipientName(request.getRecipientName())
                     .shippingPhone(request.getPhone())
                     .notes(request.getNotes())
                     .orderItems(new ArrayList<>())
                     .build();
+
+            order.applyCoupon(appliedCoupon);
+
             Order savedOrder = orderRepository.save(order);
+
             try {
                 List<OrderItem> orderItems = new ArrayList<>();
                 for (Map.Entry<String, Integer> entry : productSizeQuantityMap.entrySet()) {
@@ -202,6 +246,12 @@ public class OrderServiceImpl implements OrderService {
                 });
 
                 cartService.clearCart();
+
+                if (appliedCoupon != null) {
+                    appliedCoupon.setUsedCount(appliedCoupon.getUsedCount() + 1);
+                    couponRepository.save(appliedCoupon);
+                    log.info("Incremented usedCount for coupon: {}", appliedCoupon.getId());
+                }
             } catch (Exception e) {
                 log.error("Failed to save items/stock for order {}: {}", savedOrder.getId(), e.getMessage());
                 throw new RuntimeException("Lỗi lưu chi tiết đơn hàng: " + e.getMessage(), e);
@@ -209,8 +259,11 @@ public class OrderServiceImpl implements OrderService {
             Hibernate.initialize(savedOrder.getOrderItems());
 
             OrderResponse response = OrderResponse.fromEntity(orderRepository.findById(savedOrder.getId()).orElseThrow());
+            response.setOriginalTotalAmount(originalTotalAmount);
+            response.setDiscountAmount(discountAmount);
+            response.setCouponCode(appliedCouponCode);
+
             if (request.getPaymentMethod() == PaymentMethod.SEPAY) {
-                // Thay des=DH%d bằng des=SEVQR+TKPCCT+DH%d
                 String qrUrl = String.format("https://qr.sepay.vn/img?bank=VietinBank&acc=109874753814&template=compact&amount=%d&des=SEVQR+TKPCCT+DH%d",
                         savedOrder.getTotalAmount().longValue(), savedOrder.getId());
                 response.setQrCodeUrl(qrUrl);
@@ -218,13 +271,13 @@ public class OrderServiceImpl implements OrderService {
                         "bankName", "VietinBank",
                         "accountNumber", "109874753814",
                         "accountHolder", "CAO CHIEN THANG",
-                        "transferContent", "SEVQR TKPCCT DH" + savedOrder.getId()  // Update content hướng dẫn
+                        "transferContent", "SEVQR TKPCCT DH" + savedOrder.getId()
                 ));
             }
             return response;
-        }catch (Exception e) {
+        } catch (Exception e) {
             log.error("Create order failed: {}", e.getMessage(), e);
-            throw e;  // Propagate to controller
+            throw e;
         }
     }
 
@@ -653,6 +706,96 @@ public class OrderServiceImpl implements OrderService {
             }
         } catch (Exception e) {
             log.error("Scheduler completeOldDeliveredOrders failed: {}", e.getMessage(), e);
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] exportOrdersToExcel(OrderSearchRequest request) {
+        log.info("Exporting orders with filters: {}", request);
+        Specification<Order> spec = OrderSpecification.filterOrders(request);
+        // Fetch ALL matching orders (no pageable for export)
+        List<Order> orders = orderRepository.findAll(spec);
+        log.info("Found {} orders for export", orders.size());
+
+        try (Workbook workbook = new XSSFWorkbook()) {  // FIXED: Only Workbook in try-with-resources
+            Sheet sheet = workbook.createSheet("Orders");  // Create Sheet inside try block
+
+            // Create header row
+            Row headerRow = sheet.createRow(0);
+            String[] columns = {
+                    "Order ID", "User Email", "Order Date", "Status", "Total Amount", "Original Total Amount",
+                    "Discount Amount", "Coupon Code", "Payment Method", "Payment Status", "Province",
+                    "District", "Ward", "Recipient Name", "Phone", "Delivery Address", "Tracking Number"  // 👈 UPDATED: Added District, Ward; shifted rest
+            };
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+            for (int i = 0; i < columns.length; i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(columns[i]);
+                cell.setCellStyle(headerStyle);
+            }
+
+            // Data rows
+            int rowNum = 1;
+            CellStyle dateStyle = workbook.createCellStyle();
+            dateStyle.setDataFormat(workbook.createDataFormat().getFormat("dd/MM/yyyy HH:mm"));
+            for (Order order : orders) {
+                Hibernate.initialize(order.getOrderItems()); // Ensure lazy load
+                Row row = sheet.createRow(rowNum++);
+                row.createCell(0).setCellValue(order.getId());
+                row.createCell(1).setCellValue(order.getUser().getEmail());
+                Cell dateCell = row.createCell(2);
+                dateCell.setCellValue(order.getCreatedAt());
+                dateCell.setCellStyle(dateStyle);
+                row.createCell(3).setCellValue(order.getStatus().name());
+                row.createCell(4).setCellValue(order.getTotalAmount().doubleValue());
+                row.createCell(5).setCellValue(order.getOriginalTotalAmount() != null ? order.getOriginalTotalAmount().doubleValue() : 0.0);
+                row.createCell(6).setCellValue(order.getDiscountAmount() != null ? order.getDiscountAmount().doubleValue() : 0.0);
+
+                // 👈 FIXED: Null check for coupon
+                row.createCell(7).setCellValue(order.getCoupon() != null ? order.getCoupon().getCode() : "");
+                row.createCell(8).setCellValue(order.getPaymentMethod().name());
+                row.createCell(9).setCellValue(order.getPaymentStatus().name());
+                // Province: Fetch from address
+                String provinceName = order.getAddress() != null && order.getAddress().getProvinceCode() != null
+                        ? provinceRepository.findById(order.getAddress().getProvinceCode()).map(Province::getName).orElse("Unknown")
+                        : "Unknown";
+                row.createCell(10).setCellValue(provinceName);
+                // 👈 NEW: District
+                String districtName = order.getAddress() != null && order.getAddress().getDistrictCode() != null
+                        ? districtRepository.findById(order.getAddress().getDistrictCode()).map(District::getName).orElse("Unknown")
+                        : "Unknown";
+                row.createCell(11).setCellValue(districtName);
+                // 👈 NEW: Ward
+                String wardName = order.getAddress() != null && order.getAddress().getWardCode() != null
+                        ? wardRepository.findById(order.getAddress().getWardCode()).map(Ward::getName).orElse("Unknown")
+                        : "Unknown";
+                row.createCell(12).setCellValue(wardName);
+                // 👈 SHIFTED: Recipient Name (was 11 → 13)
+                row.createCell(13).setCellValue(order.getShippingRecipientName());
+                // 👈 SHIFTED: Phone (was 12 → 14)
+                row.createCell(14).setCellValue(order.getShippingPhone());
+                // 👈 SHIFTED: Delivery Address (was 13 → 15)
+                row.createCell(15).setCellValue(order.getDeliveryAddress());
+                // 👈 SHIFTED: Tracking Number (was 14 → 16)
+                row.createCell(16).setCellValue(order.getTrackingNumber() != null ? order.getTrackingNumber() : "");
+
+                // Auto-size columns (move outside loop for efficiency)
+            }
+            for (int i = 0; i < columns.length; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            // Write to ByteArrayOutputStream
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            log.error("Error generating Excel for export: {}", e.getMessage(), e);
+            throw new RuntimeException("Lỗi tạo file Excel: " + e.getMessage(), e);
         }
     }
 }

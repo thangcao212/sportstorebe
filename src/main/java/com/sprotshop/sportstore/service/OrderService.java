@@ -43,4 +43,6 @@ public interface OrderService {
     public List<Map<String, String>> getUniqueUserEmails();
 
     public List<OrderStatus> getPossibleNextStatuses(Long orderId);
+
+    byte[] exportOrdersToExcel(OrderSearchRequest request);
 }

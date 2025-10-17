@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -34,7 +36,7 @@ public class CreateOrderRequest {
     @NotNull(message = "Payment method is required")
     private PaymentMethod paymentMethod;
 
-    private String couponCode;  // Fixed to camelCase for consistency
+    private String couponCode; // Fixed to camelCase for consistency
 
 
     private Long addressId;

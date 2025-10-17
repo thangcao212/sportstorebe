@@ -16,7 +16,9 @@ import java.util.Optional;
 public interface CouponRepository extends JpaRepository<Coupon, Long> {
     Optional<Coupon> findByCode(String code);
 
-    @Query("SELECT c FROM Coupon c WHERE c.startDate <= :now AND c.endDate >= :now AND c.usedCount < c.totalUsageLimit AND (:minOrderValue IS NULL OR c.minOrderValue <= :minOrderValue)")
+    @Query("SELECT c FROM Coupon c WHERE c.startDate <= :now AND c.endDate >= :now " +
+            "AND (c.minOrderValue IS NULL OR c.minOrderValue <= :minOrderValue) " +
+            "AND (c.totalUsageLimit IS NULL OR c.usedCount < c.totalUsageLimit)")
     List<Coupon> findValidCoupons(@Param("now") LocalDateTime now, @Param("minOrderValue") BigDecimal minOrderValue);
 
     // NEW: Find by code and check if usable by user (if maxUsagePerUser, need separate logic in service)
