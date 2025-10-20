@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @Slf4j
@@ -62,5 +64,20 @@ public class CloudinaryService {
             fos.write(file.getBytes());
         }
         return tempFile;
+    }
+
+    public static String extractPublicIdFromUrl(String url) {
+        if (url == null) return null;
+        // Pattern fix: Match đúng Cloudinary URL, ví dụ: https://res.cloudinary.com/dm1p5ocbz/image/upload/v1234567890/abc123.jpg
+        // Group 1 sẽ catch public_id (phần trước .ext, sau /upload/)
+        Pattern pattern = Pattern.compile("https://res\\.cloudinary\\.com/[^/]+/[^/]+/upload(?:/[^/]+)*?/([^.]+)\\.");
+        Matcher matcher = pattern.matcher(url);
+        if (matcher.find()) {
+            String publicId = matcher.group(1);
+            log.debug("Extracted publicId from URL: {}", publicId);
+            return publicId;
+        }
+        log.warn("Cannot extract publicId from URL: {}", url);
+        return null;
     }
 }

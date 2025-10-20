@@ -47,6 +47,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/orders/sepay-webhook").permitAll()
                         .requestMatchers("/api/categories/**").permitAll()
                         .requestMatchers("/redis/**").permitAll()
+                        .requestMatchers("/api/reviews/**").permitAll()
                         .requestMatchers("/login/oauth2/**", "/oauth2/**").permitAll()
                         .anyRequest().authenticated()
                 )

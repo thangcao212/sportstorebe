@@ -449,7 +449,7 @@ public class OrderController {
         }
     }
 
-    @GetMapping("/export/excel")
+    @GetMapping("/admin/export/excel")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportOrdersToExcel(
             @RequestParam(required = false) Double minTotalAmount,
@@ -464,6 +464,12 @@ public class OrderController {
             @RequestParam(required = false) Long productId,
             @RequestParam(required = false) String startDate,  // yyyy-MM-dd HH:mm
             @RequestParam(required = false) String endDate) {  // yyyy-MM-dd HH:mm
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+        LocalDateTime start = null, end = null;
+
+        if (startDate != null) start = LocalDateTime.parse(startDate, formatter);
+        if (endDate != null) end = LocalDateTime.parse(endDate, formatter);
 
         // Build OrderSearchRequest from query params
         OrderSearchRequest request = new OrderSearchRequest();

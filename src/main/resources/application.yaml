@@ -65,6 +65,11 @@ sepay:
     accountNumber: 109874753814
     accountHolder: Cao Chiến Thắng
 
+cloudinary:
+  cloud-name: dm1p5ocbz
+  api-key: 923887916441132
+  api-secret: pCrHymqBTOlruX0MqVAlF2kdi-8
+
 logging:
   level:
     org.springframework.security: DEBUG
