@@ -54,6 +54,23 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
     }
 
+    @ExceptionHandler(DuplicateConversationException.class)
+    public ResponseEntity<ApiResponse<String>> handleDuplicateConversation(DuplicateConversationException e) {
+        ApiResponse<String> response = ApiResponse.<String>builder()
+                .message(e.getMessage())
+                .status(HttpStatus.CONFLICT.value())  // 👈 409 Conflict cho duplicate
+                .build();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<String>> handleIllegalArgument(IllegalArgumentException e) {
+        ApiResponse<String> response = ApiResponse.<String>builder()
+                .message(e.getMessage())
+                .status(HttpStatus.BAD_REQUEST.value())  // 👈 400 Bad Request
+                .build();
+        return ResponseEntity.badRequest().body(response);
+    }
+
 
 
 

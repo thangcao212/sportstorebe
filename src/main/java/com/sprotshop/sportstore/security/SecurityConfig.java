@@ -2,6 +2,7 @@ package com.sprotshop.sportstore.security;
 
 import com.sprotshop.sportstore.exception.CustomAccessDenialHandler;
 import com.sprotshop.sportstore.exception.CustomAuthenticationEntryPoint;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -14,6 +15,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -48,6 +50,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/categories/**").permitAll()
                         .requestMatchers("/redis/**").permitAll()
                         .requestMatchers("/api/reviews/**").permitAll()
+
+                        // 👈 STOMP destinations: Permit for topics/queues (auth in message interceptor nếu cần)
+                        // Trong SecurityConfig.java, thêm vào authorizeHttpRequests:
+                        .requestMatchers("/ws/**", "/api/messaging/**").permitAll()  // Hoặc authenticated() tùy nhu cầu
                         .requestMatchers("/login/oauth2/**", "/oauth2/**").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -71,5 +77,11 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
+    }
+
+    @PostConstruct
+    public void init() {
+        SecurityContextHolder.setStrategyName(SecurityContextHolder.MODE_INHERITABLETHREADLOCAL);
+        log.info("SecurityContext strategy set to INHERITABLETHREADLOCAL for WS propagation");
     }
 }

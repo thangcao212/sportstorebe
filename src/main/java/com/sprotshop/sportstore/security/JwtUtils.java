@@ -54,12 +54,15 @@ public class JwtUtils {
         return claimsTFunction.apply(Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload());
     }
 
-    public boolean isTokeValid(String token, UserDetails userDetails) {
+    public boolean isTokenValid(String token, UserDetails userDetails) { // 👈 FIX: isTokenValid (not isTokeValid)
         final String username = getUsernameFromToken(token);
-        return (username.equals(userDetails.getUsername()) && !isTokeExpired(token));
+        if (userDetails == null) { // 👈 FIX: Handle userDetails null (không NPE)
+            return username != null && !isTokenExpired(token);
+        }
+        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
     }
 
-    private boolean isTokeExpired(String token) {
+    private boolean isTokenExpired(String token) { // 👈 FIX: isTokenExpired (not isTokeExpired)
         return extractClaims(token, Claims::getExpiration).before(new Date());
     }
 }

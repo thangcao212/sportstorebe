@@ -20,4 +20,5 @@ public class AuthResponse {
     private UserRole role;
     private String username;
     private String imageUrl;
+    private Long id;
 }

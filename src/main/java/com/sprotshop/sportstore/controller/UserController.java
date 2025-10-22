@@ -2,9 +2,12 @@ package com.sprotshop.sportstore.controller;
 
 import com.sprotshop.sportstore.entity.Address;
 import com.sprotshop.sportstore.entity.User;
+
+import com.sprotshop.sportstore.entity.Message;
 import com.sprotshop.sportstore.request.*;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.PageResponse;
+import com.sprotshop.sportstore.service.MessagingService;
 import com.sprotshop.sportstore.service.UserService;
 import com.sprotshop.sportstore.service.UserStatsService;
 import jakarta.validation.Valid;
@@ -23,38 +26,36 @@ import java.util.Map;
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
 public class UserController {
-
     private final UserService userService;
+    private final UserStatsService userStatsService;
+    private final MessagingService messagingService; // 👈 Thêm ChatService
 
     @GetMapping("/users")
-    public ResponseEntity<ApiResponse<PageResponse<User>>> getAllProducts(
-            Pageable pageable) {
-        PageResponse<User> products = userService.getAllUsers(pageable);
-
+    public ResponseEntity<ApiResponse<PageResponse<User>>> getAllUsers(Pageable pageable) {
+        PageResponse<User> users = userService.getAllUsers(pageable);
         ApiResponse<PageResponse<User>> response = ApiResponse.<PageResponse<User>>builder()
                 .status(HttpStatus.OK.value())
                 .message("Danh sách người dùng !")
-                .data(products)
+                .data(users)
                 .build();
-
         return ResponseEntity.ok(response);
     }
-
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<String>> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
-
         ApiResponse<String> response = ApiResponse.<String>builder()
                 .status(HttpStatus.OK.value())
                 .message("Xóa người dùng thành công !")
                 .build();
-
         return ResponseEntity.ok(response);
     }
-    /// ///
-    private final UserStatsService userStatsService;
 
+
+    // 👈 Admin endpoints
+
+
+    // 👈 Các endpoints cũ của User (profile, address, etc.) - giữ nguyên, đã dùng ApiResponse
     @GetMapping("/daily")
     public ApiResponse<Map<Integer, Long>> getDaily(
             @RequestParam int month,
@@ -109,11 +110,6 @@ public class UserController {
         return ResponseEntity.ok(userService.changePassword(request));
     }
 
-//    @PostMapping("/forgot-password")
-//    public ResponseEntity<ApiResponse<String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-//        return ResponseEntity.ok(userService.forgotPassword(request));
-//    }
-
     @PostMapping("/logout-all")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<String>> logoutAll() {
@@ -144,7 +140,4 @@ public class UserController {
         userService.deleteAddress(id);
         return ResponseEntity.ok(ApiResponse.<String>builder().message("Xóa địa chỉ thành công").status(200).build());
     }
-
-
-
 }

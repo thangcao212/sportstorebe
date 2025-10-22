@@ -2,6 +2,7 @@ package com.sprotshop.sportstore.entity;
 
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.sprotshop.sportstore.Enum.AuthProvider;
 import com.sprotshop.sportstore.Enum.UserRole;
@@ -21,6 +22,7 @@ import java.util.List;
 @AllArgsConstructor
 @Entity
 @Table(name = "user")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Builder
 public class User {
     @Id
@@ -78,6 +80,7 @@ public class User {
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonManagedReference
+    @JsonIgnore
     private List<Address> addresses = new ArrayList<>();
 
 

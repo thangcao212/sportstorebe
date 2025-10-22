@@ -34,10 +34,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -55,6 +52,9 @@ public class UserServiceImpl implements UserService {
     private final ProvinceRepository provinceRepository;
     private final WardRepository wardRepository;
     private final DistrictRepository districtRepository;
+
+
+
 
 
 //    private final CartService cartService;
@@ -120,6 +120,7 @@ public class UserServiceImpl implements UserService {
                     .role(user.getRole())
                     .username(user.getUsername())
                    .imageUrl(user.getAvatar())
+                    .id(user.getId())
                     .build();
 
             return ApiResponse.<AuthResponse>builder()

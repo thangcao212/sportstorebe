@@ -1,5 +1,6 @@
 package com.sprotshop.sportstore.repository;
 
+import com.sprotshop.sportstore.Enum.UserRole;
 import com.sprotshop.sportstore.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -52,4 +53,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
 
     Page<User> findAll(Pageable pageable);
+
+    Optional<User> findFirstByRoleOrderByIdAsc(UserRole role);
+    List<User> findAllByRole(UserRole role);
 }
