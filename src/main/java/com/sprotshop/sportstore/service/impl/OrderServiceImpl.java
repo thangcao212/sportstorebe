@@ -59,7 +59,6 @@ public class OrderServiceImpl implements OrderService {
     private final UserService userService;
     private final CartService cartService;
     private final ProvinceRepository provinceRepository;
-    private final DistrictRepository districtRepository;
     private final WardRepository wardRepository;
     private final AddressRepository addressRepository;
     private final ProductSizeRepository productSizeRepository;
@@ -137,15 +136,12 @@ public class OrderServiceImpl implements OrderService {
             } else {
                 Province province = provinceRepository.findById(request.getProvinceCode())
                         .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ: " + request.getProvinceCode()));
-                District district = districtRepository.findById(request.getDistrictCode())
-                        .orElseThrow(() -> new NotFoundException("Mã huyện không hợp lệ: " + request.getDistrictCode()));
                 Ward ward = wardRepository.findById(request.getWardCode())
                         .orElseThrow(() -> new NotFoundException("Mã xã không hợp lệ: " + request.getWardCode()));
 
-                String fullAddress = String.format("%s, %s, %s, %s", request.getStreet(), ward.getName(), district.getName(), province.getName());
+                String fullAddress = String.format("%s, %s, %s", request.getStreet(), ward.getName(), province.getName());
                 address = Address.builder()
                         .provinceCode(request.getProvinceCode())
-                        .districtCode(request.getDistrictCode())
                         .wardCode(request.getWardCode())
                         .street(request.getStreet())
                         .fullAddress(fullAddress)
@@ -726,7 +722,7 @@ public class OrderServiceImpl implements OrderService {
             String[] columns = {
                     "Order ID", "User Email", "Order Date", "Status", "Total Amount", "Original Total Amount",
                     "Discount Amount", "Coupon Code", "Payment Method", "Payment Status", "Province",
-                    "District", "Ward", "Recipient Name", "Phone", "Delivery Address", "Tracking Number"  // 👈 UPDATED: Added District, Ward; shifted rest
+                    "Ward", "Recipient Name", "Phone", "Delivery Address", "Tracking Number"  // 👈 UPDATED: Removed District column, shifted rest
             };
             CellStyle headerStyle = workbook.createCellStyle();
             Font headerFont = workbook.createFont();
@@ -764,24 +760,19 @@ public class OrderServiceImpl implements OrderService {
                         ? provinceRepository.findById(order.getAddress().getProvinceCode()).map(Province::getName).orElse("Unknown")
                         : "Unknown";
                 row.createCell(10).setCellValue(provinceName);
-                // 👈 NEW: District
-                String districtName = order.getAddress() != null && order.getAddress().getDistrictCode() != null
-                        ? districtRepository.findById(order.getAddress().getDistrictCode()).map(District::getName).orElse("Unknown")
-                        : "Unknown";
-                row.createCell(11).setCellValue(districtName);
-                // 👈 NEW: Ward
+                // 👈 NEW: Ward (no District)
                 String wardName = order.getAddress() != null && order.getAddress().getWardCode() != null
                         ? wardRepository.findById(order.getAddress().getWardCode()).map(Ward::getName).orElse("Unknown")
                         : "Unknown";
-                row.createCell(12).setCellValue(wardName);
-                // 👈 SHIFTED: Recipient Name (was 11 → 13)
-                row.createCell(13).setCellValue(order.getShippingRecipientName());
-                // 👈 SHIFTED: Phone (was 12 → 14)
-                row.createCell(14).setCellValue(order.getShippingPhone());
-                // 👈 SHIFTED: Delivery Address (was 13 → 15)
-                row.createCell(15).setCellValue(order.getDeliveryAddress());
-                // 👈 SHIFTED: Tracking Number (was 14 → 16)
-                row.createCell(16).setCellValue(order.getTrackingNumber() != null ? order.getTrackingNumber() : "");
+                row.createCell(11).setCellValue(wardName);
+                // 👈 SHIFTED: Recipient Name (was 13 → 12, adjusted for no District)
+                row.createCell(12).setCellValue(order.getShippingRecipientName());
+                // 👈 SHIFTED: Phone (was 14 → 13)
+                row.createCell(13).setCellValue(order.getShippingPhone());
+                // 👈 SHIFTED: Delivery Address (was 15 → 14)
+                row.createCell(14).setCellValue(order.getDeliveryAddress());
+                // 👈 SHIFTED: Tracking Number (was 16 → 15)
+                row.createCell(15).setCellValue(order.getTrackingNumber() != null ? order.getTrackingNumber() : "");
 
                 // Auto-size columns (move outside loop for efficiency)
             }
@@ -798,4 +789,7 @@ public class OrderServiceImpl implements OrderService {
             throw new RuntimeException("Lỗi tạo file Excel: " + e.getMessage(), e);
         }
     }
+
+
+
 }

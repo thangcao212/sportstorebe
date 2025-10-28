@@ -1,4 +1,3 @@
-
 package com.sprotshop.sportstore.repository;
 
 import com.sprotshop.sportstore.Enum.OrderStatus;
@@ -22,19 +21,17 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     Page<Order> findByUserId(Long userId, Pageable pageable);
     Optional<Order> findByIdAndUserId(Long id, Long userId);
 
-
-
     boolean existsByUser_Id(Long id);
 
     List<Order> findByAddressProvinceCode(int provinceCode);
-    List<Order> findByAddressDistrictCode(int districtCode);
+    //    List<Order> findByAddressDistrictCode(int districtCode);
     List<Order> findByAddressWardCode(int wardCode);
 
     @Query("SELECT a.provinceCode, COUNT(o) FROM Order o JOIN o.address a GROUP BY a.provinceCode")
     List<Object[]> countOrdersByProvince();
 
-    @Query("SELECT a.districtCode, COUNT(o) FROM Order o JOIN o.address a GROUP BY a.districtCode")
-    List<Object[]> countOrdersByDistrict();
+//    @Query("SELECT a.districtCode, COUNT(o) FROM Order o JOIN o.address a GROUP BY a.districtCode")
+//    List<Object[]> countOrdersByDistrict();
 
     @Query("SELECT a.wardCode, COUNT(o) FROM Order o JOIN o.address a GROUP BY a.wardCode")
     List<Object[]> countOrdersByWard();
@@ -52,11 +49,11 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
             "WHERE DATE(o.created_at) BETWEEN :start AND :end " +
             "GROUP BY DAYOFWEEK(o.created_at) ORDER BY dow",
             nativeQuery = true)
-    List<Object[]> countOrdersByDateRange(@Param("start") LocalDate start, @Param("end") LocalDate end);
+    List<Object[]> countOrdersByDateRange(@Param("start") LocalDate start, @Param("end") LocalDate end);  // 👈 FIXED: LocalDate
 
     // KPI
     @Query("SELECT COALESCE(SUM(o.totalAmount),0) FROM Order o")
-    Long sumTotalAmount();
+    BigDecimal sumTotalAmount();
 
     Long countByStatus(OrderStatus status);
 
@@ -85,8 +82,6 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     // Trong com.sprotshop.sportstore.repository.OrderRepository extends JpaRepository<Order, Long>
     Optional<Order> findByIdAndTotalAmountAndPaymentStatus(Long id, BigDecimal totalAmount, PaymentStatus paymentStatus);
 
-
-
     @Query("SELECT o FROM Order o WHERE o.status = :status AND o.createdAt < :threshold AND o.paymentMethod = :method")
     List<Order> findByStatusAndCreatedAtBeforeAndPaymentMethod(@Param("status") OrderStatus status,
                                                                @Param("threshold") LocalDateTime threshold,
@@ -113,4 +108,43 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     long countByUserIdAndCouponIdAndStatus(Long userId, Long couponId, OrderStatus status);
 
     long countByAddressId(Long addressId);
+
+    // 👈 FIXED: sumProfitByDay - Use correlated subquery for cost
+    @Query("SELECT DAY(o.createdAt), SUM(o.totalAmount - COALESCE((SELECT SUM(oi2.quantity * p2.costPrice) FROM OrderItem oi2 JOIN oi2.product p2 WHERE oi2.order = o), 0)) " +
+            "FROM Order o WHERE MONTH(o.createdAt) = :month AND YEAR(o.createdAt) = :year " +
+            "GROUP BY DAY(o.createdAt) ORDER BY DAY(o.createdAt)")
+    List<Object[]> sumProfitByDay(@Param("month") int month, @Param("year") int year);
+
+    // 👈 FIXED: sumProfitByMonth - Correlated subquery
+    @Query("SELECT MONTH(o.createdAt), SUM(o.totalAmount - COALESCE((SELECT SUM(oi2.quantity * p2.costPrice) FROM OrderItem oi2 JOIN oi2.product p2 WHERE oi2.order = o), 0)) " +
+            "FROM Order o WHERE YEAR(o.createdAt) = :year " +
+            "GROUP BY MONTH(o.createdAt) ORDER BY MONTH(o.createdAt)")
+    List<Object[]> sumProfitByMonth(@Param("year") int year);
+
+    // 👈 FIXED: sumProfitByDateRange (weekly) - Correlated subquery + DATE for LocalDate
+    @Query("SELECT DAYOFWEEK(o.createdAt), SUM(o.totalAmount - COALESCE((SELECT SUM(oi2.quantity * p2.costPrice) FROM OrderItem oi2 JOIN oi2.product p2 WHERE oi2.order = o), 0)) " +
+            "FROM Order o WHERE DATE(o.createdAt) BETWEEN :start AND :end " +  // 👈 FIXED: DATE() for LocalDate
+            "GROUP BY DAYOFWEEK(o.createdAt) ORDER BY DAYOFWEEK(o.createdAt)")
+    List<Object[]> sumProfitByDateRange(@Param("start") LocalDate start, @Param("end") LocalDate end);  // 👈 FIXED: LocalDate
+
+    // 👈 FIXED: sumProfitByYearRange - Correlated subquery + DATE for LocalDate
+    @Query("SELECT YEAR(o.createdAt), SUM(o.totalAmount - COALESCE((SELECT SUM(oi2.quantity * p2.costPrice) FROM OrderItem oi2 JOIN oi2.product p2 WHERE oi2.order = o), 0)) " +
+            "FROM Order o WHERE DATE(o.createdAt) BETWEEN :start AND :end " +  // 👈 FIXED: DATE() for LocalDate
+            "GROUP BY YEAR(o.createdAt) ORDER BY YEAR(o.createdAt) DESC")
+    List<Object[]> sumProfitByYearRange(@Param("start") LocalDate start, @Param("end") LocalDate end);  // 👈 FIXED: LocalDate
+
+    // 👈 FIXED: sumTotalCost - Correlated subquery toàn bộ
+    @Query("SELECT SUM(COALESCE((SELECT SUM(oi2.quantity * p2.costPrice) FROM OrderItem oi2 JOIN oi2.product p2 WHERE oi2.order = o), 0)) FROM Order o")
+    BigDecimal sumTotalCost();
+
+    // 👈 FIXED: sumTotalProfit - Correlated subquery
+    @Query("SELECT SUM(o.totalAmount - COALESCE((SELECT SUM(oi2.quantity * p2.costPrice) FROM OrderItem oi2 JOIN oi2.product p2 WHERE oi2.order = o), 0)) FROM Order o")
+    BigDecimal sumTotalProfit();
+
+    // 👈 FIXED: findTopProductsByProfit - No subquery needed, direct calc
+    @Query("SELECT p.name, SUM((oi.price - p.costPrice) * oi.quantity) as profit " +
+            "FROM OrderItem oi JOIN oi.product p JOIN oi.order o " +
+            "WHERE o.status = 'COMPLETED' " +
+            "GROUP BY p.id, p.name ORDER BY profit DESC")
+    List<Object[]> findTopProductsByProfit(Pageable pageable);
 }

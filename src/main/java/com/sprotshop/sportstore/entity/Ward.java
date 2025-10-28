@@ -8,6 +8,7 @@ import lombok.*;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class Ward {
     @Id
     private int code;
@@ -15,10 +16,18 @@ public class Ward {
     private String name;
     private String codename;
 
+    @Column(name = "short_codename")  // Optional từ API v2
+    private String shortCodename;
+
     @Column(name = "division_type")
     private String divisionType;
 
+//    @ManyToOne
+//    @JoinColumn(name = "district_code")
+//    private District district;
+
     @ManyToOne
-    @JoinColumn(name = "district_code")
-    private District district;
+    @JoinColumn(name = "province_code")
+    private Province province;
+
 }

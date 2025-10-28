@@ -83,7 +83,8 @@ public class ProductServiceImpl implements ProductService {
         Product product = Product.builder()
                 .name(productRequest.getName())
                 .description(productRequest.getDescription())
-                .price(productRequest.getPrice()) // Convert Double to BigDecimal
+                .price(productRequest.getPrice()) // Giá bán
+                .costPrice(productRequest.getCostPrice()) // Giá nhập
                 // stockQuantity will be set based on sizes
                 .productCategory(category)
                 .brand(brand) // 👈 Set Brand
@@ -133,7 +134,8 @@ public class ProductServiceImpl implements ProductService {
 
         product.setName(productRequest.getName());
         product.setDescription(productRequest.getDescription());
-        product.setPrice(productRequest.getPrice());
+        product.setPrice(productRequest.getPrice()); // Giá bán
+        product.setCostPrice(productRequest.getCostPrice()); // Giá nhập
         log.debug("Basic info updated for product id: {}", id);
 
         // 👈 Added: Update Brand
@@ -393,7 +395,8 @@ public class ProductServiceImpl implements ProductService {
         Product product = Product.builder()
                 .name(request.getName())
                 .description(request.getDescription())
-                .price(request.getPrice())
+                .price(request.getPrice()) // Giá bán
+                .costPrice(request.getCostPrice()) // Giá nhập
                 .productCategory(category)
                 .brand(brand)
                 .images(new HashSet<>())
@@ -577,26 +580,27 @@ public class ProductServiceImpl implements ProductService {
     private ProductRequest parseRowToProductRequest(Row row) {
         String name = getCellValueAsString(row.getCell(0));
         String description = getCellValueAsString(row.getCell(1));
-        BigDecimal priceBd = getCellValueAsBigDecimal(row.getCell(2));
-        String categoryName = getCellValueAsString(row.getCell(3));
-        String sizesStr = getCellValueAsString(row.getCell(4));
-        String stockQuantitiesStr = getCellValueAsString(row.getCell(5));
+        BigDecimal priceBd = getCellValueAsBigDecimal(row.getCell(2)); // Giá bán
+        BigDecimal costPriceBd = getCellValueAsBigDecimal(row.getCell(3)); // Giá nhập (cột mới, shift categoryName to 4)
+        String categoryName = getCellValueAsString(row.getCell(4));
+        String sizesStr = getCellValueAsString(row.getCell(5));
+        String stockQuantitiesStr = getCellValueAsString(row.getCell(6));
 
-
-        // Parse imageUrls (cột G)
-        String imageUrlsStr = getCellValueAsString(row.getCell(6));
+        // Parse imageUrls (cột G -> 7)
+        String imageUrlsStr = getCellValueAsString(row.getCell(7));
         List<String> imageUrls = StringUtils.hasText(imageUrlsStr)
                 ? Arrays.stream(imageUrlsStr.split(","))
                 .map(String::trim)
                 .collect(Collectors.toList())
                 : new ArrayList<>();
 
-        String brandName = getCellValueAsString(row.getCell(7));
+        String brandName = getCellValueAsString(row.getCell(8)); // Shift to column 8
 
         ProductRequest request = ProductRequest.builder()
                 .name(name)
                 .description(description)
-                .price(priceBd != null ? priceBd : null)
+                .price(priceBd != null ? priceBd : null) // Giá bán
+                .costPrice(costPriceBd != null ? costPriceBd : null) // Giá nhập
                 .categoryName(categoryName)
                 .imageUrls(imageUrls)  // Set URLs for Excel
                 .brandName(brandName)

@@ -1,4 +1,3 @@
-// Updated OrderSpecification.java - Handle List<String> emails with IN query
 package com.sprotshop.sportstore.utils;
 
 import com.sprotshop.sportstore.entity.Address;
@@ -8,7 +7,6 @@ import com.sprotshop.sportstore.entity.User;
 import com.sprotshop.sportstore.request.OrderSearchRequest;
 import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -58,7 +56,7 @@ public class OrderSpecification {
                 predicates.add(root.get("paymentMethod").in(request.getPaymentMethod()));
             }
 
-            if(request.getPaymentStatus() != null && !request.getPaymentStatus().isEmpty()) {
+            if (request.getPaymentStatus() != null && !request.getPaymentStatus().isEmpty()) {
                 predicates.add(root.get("paymentStatus").in(request.getPaymentStatus()));
             }
 
@@ -67,9 +65,6 @@ public class OrderSpecification {
 
             if (request.getProvinceCode() != null) {
                 predicates.add(cb.equal(addressJoin.get("provinceCode"), request.getProvinceCode()));
-            }
-            if (request.getDistrictCode() != null) {
-                predicates.add(cb.equal(addressJoin.get("districtCode"), request.getDistrictCode()));
             }
             if (request.getWardCode() != null) {
                 predicates.add(cb.equal(addressJoin.get("wardCode"), request.getWardCode()));
@@ -98,7 +93,7 @@ public class OrderSpecification {
                 predicates.add(cb.exists(sub));
             }
 
-            // Emails exact filter - CHANGED: List<String> emails with IN (case-insensitive)
+            // Emails exact filter
             if (request.getEmails() != null && !request.getEmails().isEmpty()) {
                 Join<Order, User> userJoin = root.join("user", JoinType.LEFT);
                 List<String> lowerEmails = request.getEmails().stream()
@@ -119,5 +114,4 @@ public class OrderSpecification {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
     }
-
 }

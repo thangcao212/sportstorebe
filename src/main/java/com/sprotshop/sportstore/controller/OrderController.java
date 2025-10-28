@@ -457,7 +457,7 @@ public class OrderController {
             @RequestParam(required = false) String status,  // e.g., "PENDING,PROCESSING"
             @RequestParam(required = false) String paymentMethod,  // e.g., "COD,SEPAY"
             @RequestParam(required = false) Integer provinceCode,
-            @RequestParam(required = false) Integer districtCode,
+//            @RequestParam(required = false) Integer districtCode,
             @RequestParam(required = false) Integer wardCode,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String emails,  // comma-separated
@@ -486,7 +486,7 @@ public class OrderController {
                     .collect(Collectors.toList()));
         }
         request.setProvinceCode(provinceCode);
-        request.setDistrictCode(districtCode);
+//        request.setDistrictCode(districtCode);
         request.setWardCode(wardCode);
         request.setSearch(search);
         if (emails != null && !emails.isBlank()) {

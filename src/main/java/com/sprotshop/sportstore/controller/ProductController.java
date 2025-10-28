@@ -148,18 +148,22 @@ public class ProductController {
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Double minPrice,
             @RequestParam(required = false) Double maxPrice,
+            @RequestParam(required = false) Double minCostPrice,
+            @RequestParam(required = false) Double maxCostPrice,
             @RequestParam(required = false) Integer minStock,
             @RequestParam(required = false) Integer maxStock,
             @RequestParam(required = false) Long brandId,
             Pageable pageable) {
-        log.debug("Received request to search products with criteria: searchValue={}, categoryId={}, minPrice={}, maxPrice={},brandId={}, minStock={}, maxStock={}, pageable={}",
-                searchValue, categoryId,brandId, minPrice, maxPrice, minStock, maxStock, pageable);
+        log.debug("Received request to search products with criteria: searchValue={}, categoryId={}, minPrice={}, maxPrice={}, minCostPrice={}, maxCostPrice={}, brandId={}, minStock={}, maxStock={}, pageable={}",
+                searchValue, categoryId, brandId, minPrice, maxPrice, minCostPrice, maxCostPrice, minStock, maxStock, pageable);
 
         ProductSearchRequest searchRequest = ProductSearchRequest.builder()
                 .searchValue(searchValue)
                 .categoryId(categoryId)
                 .minPrice(minPrice)
                 .maxPrice(maxPrice)
+                .minCostPrice(minCostPrice)
+                .maxCostPrice(maxCostPrice)
                 .minStock(minStock)
                 .maxStock(maxStock)
                 .brandId(brandId)
@@ -182,6 +186,7 @@ public class ProductController {
                 page.getTotalElements(), page.getNumber(), page.getSize());
         return ResponseEntity.ok(apiResponse);
     }
+
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('ROLE_ADMIN')")

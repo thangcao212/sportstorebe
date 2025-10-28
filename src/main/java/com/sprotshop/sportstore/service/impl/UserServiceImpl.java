@@ -51,13 +51,10 @@ public class UserServiceImpl implements UserService {
     private final CloudinaryService cloudinaryService;
     private final ProvinceRepository provinceRepository;
     private final WardRepository wardRepository;
-    private final DistrictRepository districtRepository;
 
+    // 👈 REMOVED: private final DistrictRepository districtRepository; (no longer needed for 2-level address)
 
-
-
-
-//    private final CartService cartService;
+    //    private final CartService cartService;
 
     @Override
     @Transactional
@@ -74,7 +71,7 @@ public class UserServiceImpl implements UserService {
         user.setPassword(passwordEncoder.encode(registerRequest.getPassword()));
         user.setPhone(registerRequest.getPhone());
         user.setRole(role);
-//        user.setAddresses(new ArrayList<>()); // Có thể bỏ nếu không cần
+        //        user.setAddresses(new ArrayList<>()); // Có thể bỏ nếu không cần
 
         User savedUser = userRepository.save(user);
 
@@ -119,7 +116,7 @@ public class UserServiceImpl implements UserService {
                     .jwt(token)
                     .role(user.getRole())
                     .username(user.getUsername())
-                   .imageUrl(user.getAvatar())
+                    .imageUrl(user.getAvatar())
                     .id(user.getId())
                     .build();
 
@@ -133,8 +130,6 @@ public class UserServiceImpl implements UserService {
         }
     }
 
-
-
     @Override
     public User getCurrentLoggedInUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -144,7 +139,6 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findByEmail(email).orElseThrow(() -> new NotFoundException("User Not Found"));
 
         return user;
-
     }
 
     @Override
@@ -164,8 +158,6 @@ public class UserServiceImpl implements UserService {
 
         userRepository.delete(user);
     }
-
-
 
     private PageResponse<User> toPageResponse(Page<User> page) {
         return PageResponse.<User>builder()
@@ -248,9 +240,9 @@ public class UserServiceImpl implements UserService {
         if (!passwordEncoder.matches(request.getOldPassword(), currentUser.getPassword())) {
             throw new InvalidCredentialsException("Mật khẩu cũ không đúng");
         }
-//        if (!isValidPassword(request.getNewPassword())) {
-//            throw new IllegalArgumentException("Mật khẩu mới phải >=8 ký tự, có chữ hoa/thường/số");
-//        }
+        //        if (!isValidPassword(request.getNewPassword())) {
+        //            throw new IllegalArgumentException("Mật khẩu mới phải >=8 ký tự, có chữ hoa/thường/số");
+        //        }
         currentUser.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(currentUser);
         return ApiResponse.<String>builder()
@@ -258,29 +250,6 @@ public class UserServiceImpl implements UserService {
                 .status(HttpStatus.OK.value())
                 .build();
     }
-
-//    @Override
-//    public ApiResponse<String> forgotPassword(ForgotPasswordRequest request) {
-//        Optional<User> userOpt = userRepository.findByEmail(request.getEmail());
-//        if (userOpt.isEmpty()) {
-//            throw new NotFoundException("Email không tồn tại");
-//        }
-//        User user = userOpt.get();
-//        String resetToken = jwtUtils.generateResetToken(user.getEmail());  // Exp 1h
-//        String resetUrl = "http://localhost:3000/reset-password?token=" + resetToken;
-//
-//        SimpleMailMessage message = new SimpleMailMessage();
-//        message.setTo(user.getEmail());
-//        message.setSubject("Reset Password - SportStore");
-//        message.setText("Click để reset: " + resetUrl + "\nHết hạn sau 1 giờ.");
-//        mailSender.send(message);
-//
-//        log.info("Reset email sent to: {}", user.getEmail());
-//        return ApiResponse.<String>builder()
-//                .message("Email reset đã gửi")
-//                .status(HttpStatus.OK.value())
-//                .build();
-//    }
 
     @Override
     public ApiResponse<String> logoutAll() {
@@ -309,18 +278,16 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public ApiResponse<Address> addAddress(AddAddressRequest request) {
         User user = getCurrentLoggedInUser();
-        // Validate province/district/ward nếu cần (gọi repo findById)
+        // 👈 UPDATED: Validate chỉ province + ward (bỏ district)
         Province province = provinceRepository.findById(request.getProvinceCode())
                 .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ"));
-        District district = districtRepository.findById(request.getDistrictCode())
-                .orElseThrow(() -> new NotFoundException("Mã huyện không hợp lệ"));
         Ward ward = wardRepository.findById(request.getWardCode())
                 .orElseThrow(() -> new NotFoundException("Mã xã không hợp lệ"));
 
-        String fullAddress = String.format("%s, %s, %s, %s", request.getStreet(), ward.getName(), district.getName(), province.getName());
+        // 👈 UPDATED: fullAddress chỉ 3 phần (street + ward + province)
+        String fullAddress = String.format("%s, %s, %s", request.getStreet(), ward.getName(), province.getName());
         Address address = Address.builder()
                 .provinceCode(request.getProvinceCode())
-                .districtCode(request.getDistrictCode())
                 .wardCode(request.getWardCode())
                 .street(request.getStreet())
                 .fullAddress(fullAddress)
@@ -345,9 +312,8 @@ public class UserServiceImpl implements UserService {
         Address address = addressRepository.findByIdAndUserId(id, user.getId())
                 .orElseThrow(() -> new NotFoundException("Địa chỉ không tồn tại"));
 
-        // 👈 FIXED: Validate và load province/district/ward nếu request có codes mới (hoặc luôn load để rebuild)
+        // 👈 UPDATED: Validate và load chỉ province + ward (bỏ district)
         Province province;
-        District district;
         Ward ward;
 
         if (request.getProvinceCode() != null) {
@@ -358,14 +324,6 @@ public class UserServiceImpl implements UserService {
                     .orElseThrow(() -> new NotFoundException("Mã tỉnh hiện tại không hợp lệ"));
         }
 
-        if (request.getDistrictCode() != null) {
-            district = districtRepository.findById(request.getDistrictCode())
-                    .orElseThrow(() -> new NotFoundException("Mã huyện không hợp lệ"));
-        } else {
-            district = districtRepository.findById(address.getDistrictCode())
-                    .orElseThrow(() -> new NotFoundException("Mã huyện hiện tại không hợp lệ"));
-        }
-
         if (request.getWardCode() != null) {
             ward = wardRepository.findById(request.getWardCode())
                     .orElseThrow(() -> new NotFoundException("Mã xã không hợp lệ"));
@@ -374,15 +332,14 @@ public class UserServiceImpl implements UserService {
                     .orElseThrow(() -> new NotFoundException("Mã xã hiện tại không hợp lệ"));
         }
 
-        // 👈 FIXED: Set values (nếu null, giữ nguyên)
+        // 👈 UPDATED: Set values (nếu null, giữ nguyên), bỏ districtCode
         address.setStreet(request.getStreet() != null ? request.getStreet() : address.getStreet());
         address.setProvinceCode(province.getCode());
-        address.setDistrictCode(district.getCode());
         address.setWardCode(ward.getCode());
 
-        // 👈 FIXED: Rebuild fullAddress luôn sau khi set codes
-        String fullAddress = String.format("%s, %s, %s, %s",
-                address.getStreet(), ward.getName(), district.getName(), province.getName());
+        // 👈 UPDATED: Rebuild fullAddress với 3 phần (street + ward + province)
+        String fullAddress = String.format("%s, %s, %s",
+                address.getStreet(), ward.getName(), province.getName());
         address.setFullAddress(fullAddress);
 
         address.setLabel(request.getLabel() != null ? request.getLabel() : address.getLabel());
@@ -395,6 +352,7 @@ public class UserServiceImpl implements UserService {
                 .status(HttpStatus.OK.value())
                 .build();
     }
+
     @Override
     @Transactional
     public void deleteAddress(Long id) {
@@ -412,16 +370,5 @@ public class UserServiceImpl implements UserService {
         user.removeAddress(address);  // Bidirectional + orphanRemoval
         userRepository.save(user);  // Trigger delete cascade
     }
-
-    // Existing helpers (getCurrentLoggedInUser, toPageResponse, etc.)
-//    private User getCurrentLoggedInUser() {
-//        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-//        String email = authentication.getName();
-//        return userRepository.findByEmail(email).orElseThrow(() -> new NotFoundException("User Not Found"));
-//    }
-
-//    private boolean isValidPassword(String password) {
-//        return password.length() >= 8 && password.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).*$");
-//    }
 
 }

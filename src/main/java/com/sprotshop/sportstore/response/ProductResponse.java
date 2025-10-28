@@ -24,6 +24,7 @@ public class ProductResponse {
     private String name;
     private String description;
     private BigDecimal price;
+    private BigDecimal costPrice;
     private Integer stockQuantity; // Total stock quantity
     private List<ImageInfo> images;
     private Long categoryId;
@@ -102,6 +103,7 @@ public class ProductResponse {
                 .name(product.getName())
                 .description(product.getDescription())
                 .price(product.getPrice())
+                .costPrice(product.getCostPrice())
                 .stockQuantity(product.getStockQuantity()) // This is the total stock
                 .images(imageInfos)
                 .categoryId(catId)

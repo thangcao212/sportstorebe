@@ -20,7 +20,7 @@ public class OrderSearchRequest {
     private List<PaymentMethod> paymentMethod;  // FIXED: Changed to List to support multiple
     private List<PaymentStatus> paymentStatus;
     private Integer provinceCode;
-    private Integer districtCode;
+//    private Integer districtCode;
     private Integer wardCode;
     private String search;
     private List<String> emails; // NEW: Added for exact email filter

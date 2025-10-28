@@ -20,8 +20,8 @@ public class Address {
     @Column(name = "province_code")
     private Integer provinceCode;
 
-    @Column(name = "district_code")
-    private Integer districtCode;
+//    @Column(name = "district_code")
+//    private Integer districtCode;
 
     @Column(name = "ward_code")
     private Integer wardCode;

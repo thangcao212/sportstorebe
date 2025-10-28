@@ -1,7 +1,6 @@
 package com.sprotshop.sportstore.controller;
 
 import com.sprotshop.sportstore.entity.Province;
-import com.sprotshop.sportstore.entity.District;
 import com.sprotshop.sportstore.entity.Ward;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.service.ProvinceService;
@@ -33,21 +32,10 @@ public class ProvinceController {
                 .build());
     }
 
-    @GetMapping("/provinces/{provinceCode}/districts")
-    public ResponseEntity<ApiResponse<List<District>>> getDistrictsByProvince(@PathVariable int provinceCode) {
-        log.info("Fetching districts for province code: {}", provinceCode);
-        List<District> districts = provinceService.getDistrictsByProvince(provinceCode);
-        return ResponseEntity.ok(ApiResponse.<List<District>>builder()
-                .message("Success")
-                .data(districts)
-                .status(HttpStatus.OK.value())
-                .build());
-    }
-
-    @GetMapping("/districts/{districtCode}/wards")
-    public ResponseEntity<ApiResponse<List<Ward>>> getWardsByDistrict(@PathVariable int districtCode) {
-        log.info("Fetching wards for district code: {}", districtCode);
-        List<Ward> wards = provinceService.getWardsByDistrict(districtCode);
+    @GetMapping("/provinces/{provinceCode}/wards")
+    public ResponseEntity<ApiResponse<List<Ward>>> getWardsByProvince(@PathVariable int provinceCode) {
+        log.info("Fetching wards for province code: {}", provinceCode);
+        List<Ward> wards = provinceService.getWardsByProvince(provinceCode);
         return ResponseEntity.ok(ApiResponse.<List<Ward>>builder()
                 .message("Success")
                 .data(wards)

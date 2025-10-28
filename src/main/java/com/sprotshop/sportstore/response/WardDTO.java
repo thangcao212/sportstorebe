@@ -14,5 +14,8 @@ public class WardDTO {
     private Integer code; // Mã phường/xã
     private String codename; // Tên chuẩn hóa
     private String divisionType; // Loại: "phường", "xã"
-    private Integer districtCode; // Mã quận/huyện liên kết
+//    private Integer districtCode; // Mã quận/huyện liên kết
+
+    private String shortCodename;  // Optional từ API v2
+    private Integer provinceCode;
 }

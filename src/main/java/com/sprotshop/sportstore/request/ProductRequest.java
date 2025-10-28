@@ -26,9 +26,13 @@ public class ProductRequest {
 
     private String description;
 
-    @NotNull(message = "Giá sản phẩm không được để trống")
-    @Positive(message = "Giá sản phẩm phải lớn hơn 0")
+    @NotNull(message = "Giá bán sản phẩm không được để trống")
+    @Positive(message = "Giá bán sản phẩm phải lớn hơn 0")
     private BigDecimal price;
+
+    @NotNull(message = "Giá nhập sản phẩm không được để trống")
+    @Positive(message = "Giá nhập sản phẩm phải lớn hơn 0")
+    private BigDecimal costPrice;
 
     @NotNull(message = "Số lượng tồn kho không được để trống")
     @PositiveOrZero(message = "Số lượng tồn kho không được âm")

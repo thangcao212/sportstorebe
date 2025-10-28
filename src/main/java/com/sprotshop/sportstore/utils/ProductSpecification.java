@@ -10,9 +10,7 @@ import java.util.List;
 
 public class ProductSpecification {
 
-    /**
-     * Tìm kiếm theo tên hoặc mô tả
-     */
+
     public static Specification<Product> bySearchValue(String searchValue) {
         return (root, query, cb) -> {
             if (searchValue == null || searchValue.trim().isEmpty()) {
@@ -29,11 +27,7 @@ public class ProductSpecification {
         };
     }
 
-    /**
-     * Lọc theo ID danh mục sản phẩm, bao gồm danh mục cha và tất cả danh mục con đệ quy
-     * @param categoryId ID của danh mục cha
-     * @param descendantIds Danh sách ID của tất cả danh mục con đệ quy
-     */
+
     public static Specification<Product> byCategoryId(Long categoryId, List<Long> descendantIds) {
         return (root, query, cb) -> {
             if (categoryId == null && (descendantIds == null || descendantIds.isEmpty())) {
@@ -56,9 +50,7 @@ public class ProductSpecification {
         };
     }
 
-    /**
-     * Lọc theo khoảng giá
-     */
+
     public static Specification<Product> byPriceRange(Double minPrice, Double maxPrice) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -72,9 +64,21 @@ public class ProductSpecification {
         };
     }
 
-    /**
-     * Lọc theo tồn kho
-     */
+
+    public static Specification<Product> byCostPriceRange(Double minCostPrice, Double maxCostPrice) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (minCostPrice != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("costPrice"), minCostPrice));
+            }
+            if (maxCostPrice != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("costPrice"), maxCostPrice));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+
+
     public static Specification<Product> byStockQuantity(Integer minStock, Integer maxStock) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -88,9 +92,7 @@ public class ProductSpecification {
         };
     }
 
-    /**
-     * 👈 Added: Lọc theo brand ID
-     */
+
     public static Specification<Product> byBrandId(Long brandId) {
         return (root, query, cb) -> {
             if (brandId == null) {
@@ -100,17 +102,14 @@ public class ProductSpecification {
         };
     }
 
-    /**
-     * Fetch join cho brand để tránh lazy loading issue trong paginated search
-     * Chỉ apply fetch cho data query (không phải count query)
-     */
+
     public static Specification<Product> fetchBrand() {
         return (root, query, cb) -> {
-            // Chỉ fetch cho main data query (resultType != Long.class), không phải count query
+
             if (!Long.class.equals(query.getResultType())) {
                 root.fetch("brand", JoinType.LEFT);
             }
-            // For count query: Không cần join/fetch vì không có predicate trên brand
+
             return cb.conjunction();  // Không thêm where clause
         };
     }

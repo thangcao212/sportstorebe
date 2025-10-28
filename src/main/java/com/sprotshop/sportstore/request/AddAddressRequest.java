@@ -8,7 +8,7 @@ import lombok.Data;
 public class AddAddressRequest {
     @NotBlank private String street;
     @NotNull private Integer provinceCode;
-    @NotNull private Integer districtCode;
+//    @NotNull private Integer districtCode;
     @NotNull private Integer wardCode;
     private String label;
     private Boolean isDefault = false;

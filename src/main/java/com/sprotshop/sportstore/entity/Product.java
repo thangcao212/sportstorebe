@@ -29,6 +29,9 @@ public class Product {
     @Column(nullable = false)
     private BigDecimal price;
 
+    @Column(nullable = false, name = "cost_price")
+    private BigDecimal costPrice;
+
     @Column(nullable = false)
     private Integer stockQuantity;
 
@@ -41,13 +44,9 @@ public class Product {
     @JoinColumn(name = "category_id")
     private ProductCategory productCategory;
 
-
-
-
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private Set<ProductSize> productSizes = new HashSet<>();
-
 
     public void addImage(Image image) {
         if (image != null) {
@@ -99,7 +98,7 @@ public class Product {
 
     @Override
     public String toString() {
-        return "Product{id=" + id + ", name='" + name + '\'' + ", price=" + price + ", stockQuantity=" + stockQuantity + "}";
+        return "Product{id=" + id + ", name='" + name + '\'' + ", price=" + price + ", costPrice=" + costPrice + ", stockQuantity=" + stockQuantity + "}";
     }
 
     // Thêm Brand
@@ -137,6 +136,4 @@ public class Product {
             review.setProduct(null);
         }
     }
-
-
 }

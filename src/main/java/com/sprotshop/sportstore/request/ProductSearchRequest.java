@@ -34,4 +34,10 @@ public class ProductSearchRequest {
     private Integer maxStock; // Tồn kho tối đa
 
     private Long brandId;
+
+    @Positive(message = "Giá nhập tối thiểu phải lớn hơn 0")
+    private Double minCostPrice; // Giá nhập tối thiểu
+
+    @Positive(message = "Giá nhập tối đa phải lớn hơn 0")
+    private Double maxCostPrice; // Giá nhập tối đa
 }

@@ -15,5 +15,7 @@ public class ProvinceDTO {
     private String divisionType;
     private String codename;
     private Integer phoneCode;
-    private List<DistrictDTO> districts;
+//    private List<DistrictDTO> districts;
+
+    private List<WardDTO> wards;
 }
