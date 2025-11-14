@@ -23,7 +23,7 @@ import java.util.Map;
 public class AuthController {
 
     private final UserService userService;
-    private final GoogleAuthService googleAuthService;
+
 
 
     @PostMapping("/register")
