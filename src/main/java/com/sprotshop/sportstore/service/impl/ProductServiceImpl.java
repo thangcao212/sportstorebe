@@ -4,10 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sprotshop.sportstore.entity.*;
 import com.sprotshop.sportstore.exception.NotFoundException;
-import com.sprotshop.sportstore.repository.BrandRepository;
-import com.sprotshop.sportstore.repository.ImageRepository;
-import com.sprotshop.sportstore.repository.ProductCategoryRepository;
-import com.sprotshop.sportstore.repository.ProductRepository;
+import com.sprotshop.sportstore.repository.*;
 import com.sprotshop.sportstore.request.BrandRequest;
 import com.sprotshop.sportstore.request.ProductRequest;
 import com.sprotshop.sportstore.request.ProductSearchRequest;
@@ -38,6 +35,7 @@ import java.math.BigDecimal;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -58,7 +56,7 @@ public class ProductServiceImpl implements ProductService {
     private final BrandService brandService; //
     private final BrandRepository brandRepository;
     private final ObjectMapper objectMapper; // For any JSON parsing if needed
-
+    private final OrderItemRepository orderItemRepository;
     @Override
     @Transactional
     public ProductResponse createProduct(ProductRequest productRequest) throws IOException {
@@ -271,6 +269,12 @@ public class ProductServiceImpl implements ProductService {
         if (searchRequest.getMinPrice() != null || searchRequest.getMaxPrice() != null) {
             spec = spec.and(ProductSpecification.byPriceRange(searchRequest.getMinPrice(), searchRequest.getMaxPrice()));
         }
+
+        // 👈 FIX: THÊM ĐÂY - Apply cost price filter (tương tự price range)
+        if (searchRequest.getMinCostPrice() != null || searchRequest.getMaxCostPrice() != null) {
+            spec = spec.and(ProductSpecification.byCostPriceRange(searchRequest.getMinCostPrice(), searchRequest.getMaxCostPrice()));
+        }
+
         if (searchRequest.getMinStock() != null || searchRequest.getMaxStock() != null) {
             spec = spec.and(ProductSpecification.byStockQuantity(searchRequest.getMinStock(), searchRequest.getMaxStock()));
         }
@@ -736,5 +740,33 @@ public class ProductServiceImpl implements ProductService {
                 .imageUrl(imageUrl)
                 .imageId(imageId)
                 .build();
+    }
+
+
+    // 👈 NEW: Method cho top-selling full products (public, past month optional)
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductResponse> getTopSellingProducts(int limit, boolean pastMonth) {
+        log.debug("Fetching top {} selling products (pastMonth={})", limit, pastMonth);
+
+        // Query native/jpql để join OrderItem -> sum quantity per product, order desc
+        // Giả sử bạn có OrderItemRepository hoặc dùng @Query trong ProductRepository
+        LocalDateTime cutoff = pastMonth ? LocalDateTime.now().minusMonths(1) : LocalDateTime.of(1900, 1, 1, 0, 0);
+        List<Object[]> topIds = orderItemRepository.findTopProductIdsBySold(limit, cutoff); // 👈 Implement repo method below
+
+        if (topIds.isEmpty()) {
+            log.warn("No top-selling products found");
+            return List.of(); // Empty list
+        }
+
+        List<Long> productIds = topIds.stream().map(row -> (Long) row[0]).collect(Collectors.toList());
+        List<Product> products = productRepository.findAllById(productIds); // Fetch full with EntityGraph if needed
+
+        // Sort theo sold count (from topIds)
+        Map<Long, Long> soldMap = topIds.stream().collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+        products.sort((p1, p2) -> soldMap.get(p2.getId()).compareTo(soldMap.get(p1.getId())));
+
+        log.info("Found {} top-selling products", products.size());
+        return products.stream().map(ProductResponse::fromEntity).collect(Collectors.toList());
     }
 }

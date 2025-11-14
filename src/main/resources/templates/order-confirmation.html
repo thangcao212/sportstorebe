@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Xác Nhận Đơn Hàng</title>
+</head>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #fdfdfd; color: #333;">
+<h2 style="color: #2c3e50;">🎉 Cảm ơn bạn đã đặt hàng tại SportStore!</h2>
+
+<p>Đơn hàng <strong th:text="${order.id}"></strong> đã được tạo thành công.</p>
+<p>Trạng thái hiện tại: <strong th:text="${status}"></strong></p>
+
+<table border="1" style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+    <thead style="background-color: #f8f8f8;">
+    <tr>
+        <th style="padding: 8px;">Sản phẩm</th>
+        <th style="padding: 8px;">Kích thước</th>
+        <th style="padding: 8px;">Số lượng</th>
+        <th style="padding: 8px;">Giá (VND)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="item : ${items}">
+        <td style="padding: 8px;" th:text="${item.product.name}"></td>
+        <td style="padding: 8px;" th:text="${item.size}"></td>
+        <td style="padding: 8px;" th:text="${item.quantity}"></td>
+
+        <!-- ✅ Format chính xác cho BigDecimal (0 chữ số sau dấu phẩy, có dấu phẩy ngăn cách hàng nghìn) -->
+        <td style="padding: 8px; text-align: right;"
+            th:text="${#numbers.formatDecimal(item.price, 0, 'COMMA', 0, 'POINT')} + ' VND'">
+        </td>
+    </tr>
+    </tbody>
+</table>
+
+<!-- ✅ Format tổng tiền -->
+<p style="margin-top: 15px; font-size: 16px;">
+    <strong>Tổng tiền:</strong>
+    <span th:text="${#numbers.formatDecimal(total, 0, 'COMMA', 0, 'POINT')} + ' VND'"></span>
+</p>
+
+<p>Địa chỉ giao hàng: <span th:text="${order.deliveryAddress}"></span></p>
+
+<!--<div th:if="${order.qrCodeUrl}" style="margin-top: 20px;">-->
+<!--    <p>QR Code thanh toán SEPAY:</p>-->
+<!--    <img th:src="${order.qrCodeUrl}" alt="QR Code" width="200" style="border: 1px solid #ccc; padding: 5px;">-->
+<!--</div>-->
+
+<hr style="margin-top: 25px;">
+<small style="color: #888;">SportStore © 2025</small>
+</body>
+</html>

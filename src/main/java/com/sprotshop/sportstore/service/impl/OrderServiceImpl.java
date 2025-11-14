@@ -30,6 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
+import org.thymeleaf.context.Context;  // 👈 THÊM: Cho template
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -67,6 +68,7 @@ public class OrderServiceImpl implements OrderService {
     private final UserRepository userRepository;
     private final CouponService couponService;  // NEW: For applyCoupon
     private final CouponRepository couponRepository;
+    private final EmailService emailService;  // 👈 THÊM: Để gửi email thông báo
 
     private static final long WAITING_TIMEOUT_MINUTES = 5;  // 5 minutes for testing SEPAY
     private static final long COMPLETE_AFTER_DAYS = 7;
@@ -270,11 +272,23 @@ public class OrderServiceImpl implements OrderService {
                         "transferContent", "SEVQR TKPCCT DH" + savedOrder.getId()
                 ));
             }
+
+            // 👈 THÊM MỚI: Gửi email xác nhận đơn hàng thành công (async, không block)
+            sendOrderConfirmationEmailAsync(savedOrder);
+
             return response;
         } catch (Exception e) {
             log.error("Create order failed: {}", e.getMessage(), e);
             throw e;
         }
+    }
+
+    // 👈 THÊM MỚI: Helper method gửi email xác nhận đơn hàng (async)
+    private void sendOrderConfirmationEmailAsync(Order order) {
+        // Gọi async để không block transaction
+        // Giả sử bạn có @Async method trong EmailService, hoặc gọi trực tiếp (nếu EmailService có @Async)
+        emailService.sendOrderConfirmation(order.getUser().getEmail(), order);
+        log.info("Order confirmation email queued for order: {}", order.getId());
     }
 
     @Transactional(readOnly = true)
@@ -369,6 +383,8 @@ public class OrderServiceImpl implements OrderService {
             Order order = orderRepository.findById(orderId)
                     .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
 
+            OrderStatus oldStatus = order.getStatus();  // 👈 THÊM: Lưu status cũ để check thay đổi
+
             // NEW: Auto-confirm COD payment khi set DELIVERED (nếu đang PENDING) - FIX cho flow COD
             if (order.getPaymentMethod() == PaymentMethod.COD &&
                     newStatus == OrderStatus.DELIVERED &&
@@ -394,8 +410,17 @@ public class OrderServiceImpl implements OrderService {
             validateTransition(order, newStatus, null);
             order.setStatus(newStatus);
             order.setOrderStatus(newStatus);  // 👈 Sync orderStatus with status (as per original logic, adjust if needed)
-            Hibernate.initialize(order.getOrderItems());
-            return OrderResponse.fromEntity(orderRepository.save(order));
+
+            Order savedOrder = orderRepository.save(order);
+
+            // 👈 THÊM MỚI: Nếu status thay đổi, gửi email thông báo (tránh spam nếu gọi update nhiều lần)
+            if (oldStatus != newStatus) {
+                sendStatusUpdateEmailAsync(savedOrder, oldStatus, newStatus);
+                log.info("Status update email queued for order: {} ({} -> {})", orderId, oldStatus, newStatus);
+            }
+
+            Hibernate.initialize(savedOrder.getOrderItems());
+            return OrderResponse.fromEntity(savedOrder);
         } catch (InvalidOrderTransitionException e) {
             log.error("Transition error for order {}: {}", orderId, e.getMessage());
             throw e;
@@ -403,6 +428,13 @@ public class OrderServiceImpl implements OrderService {
             log.error("Update status failed for order {}: {}", orderId, e.getMessage());
             throw new RuntimeException("Lỗi cập nhật trạng thái: " + e.getMessage(), e);
         }
+    }
+
+    // 👈 THÊM MỚI: Helper method gửi email cập nhật trạng thái (async)
+    private void sendStatusUpdateEmailAsync(Order order, OrderStatus oldStatus, OrderStatus newStatus) {
+        // Gọi async
+        emailService.sendStatusUpdate(order.getUser().getEmail(), order, oldStatus.name(), newStatus.name());
+        log.info("Status update email queued for order: {}", order.getId());
     }
 
     // 4. CONFIRM PROCESSING (COD flow step 2)
@@ -415,10 +447,18 @@ public class OrderServiceImpl implements OrderService {
             if (order.getPaymentMethod() != PaymentMethod.COD || order.getStatus() != OrderStatus.PENDING) {
                 throw new InvalidOrderTransitionException("Chỉ xác nhận xử lý cho COD ở PENDING");
             }
+            OrderStatus oldStatus = order.getStatus();  // 👈 THÊM: Lưu cũ
             validateTransition(order, OrderStatus.PROCESSING, null);
             order.setStatus(OrderStatus.PROCESSING);
             order.setOrderStatus(OrderStatus.PROCESSING);  // 👈 Sync
-            return OrderResponse.fromEntity(orderRepository.save(order));
+            Order savedOrder = orderRepository.save(order);
+
+            // 👈 THÊM: Gửi email nếu thay đổi status
+            if (oldStatus != OrderStatus.PROCESSING) {
+                sendStatusUpdateEmailAsync(savedOrder, oldStatus, OrderStatus.PROCESSING);
+            }
+
+            return OrderResponse.fromEntity(savedOrder);
         } catch (Exception e) {
             log.error("Confirm processing failed for order {}: {}", orderId, e.getMessage());
             throw e;
@@ -435,6 +475,7 @@ public class OrderServiceImpl implements OrderService {
                 throw new InvalidOrderTransitionException("Chỉ xác nhận COD payment khi DELIVERED và PENDING");
             }
 
+            OrderStatus oldStatus = order.getStatus();  // 👈 THÊM: Lưu cũ
             // Set PAID first
             order.setPaymentStatus(PaymentStatus.PAID);
 
@@ -442,8 +483,15 @@ public class OrderServiceImpl implements OrderService {
             validateTransition(order, OrderStatus.COMPLETED, null);
             order.setStatus(OrderStatus.COMPLETED);
             order.setOrderStatus(OrderStatus.COMPLETED);  // 👈 Sync
-            Hibernate.initialize(order.getOrderItems());
-            return OrderResponse.fromEntity(orderRepository.save(order));
+            Order savedOrder = orderRepository.save(order);
+
+            // 👈 THÊM: Gửi email
+            if (oldStatus != OrderStatus.COMPLETED) {
+                sendStatusUpdateEmailAsync(savedOrder, oldStatus, OrderStatus.COMPLETED);
+            }
+
+            Hibernate.initialize(savedOrder.getOrderItems());
+            return OrderResponse.fromEntity(savedOrder);
         } catch (Exception e) {
             log.error("COD confirm error for order {}: {}", orderId, e.getMessage());
             throw e;
@@ -459,6 +507,8 @@ public class OrderServiceImpl implements OrderService {
             Order order = orderRepository.findByIdAndUserId(orderId, currentUser.getId())
                     .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
 
+            OrderStatus oldStatus = order.getStatus();  // 👈 THÊM: Lưu cũ
+
             // Allow cancel from PENDING/WAITING/PROCESSING/SHIPPED/DELIVERED (not COMPLETED)
             if (order.getStatus() == OrderStatus.COMPLETED) {
                 throw new InvalidOrderTransitionException("Cannot cancel completed order");
@@ -469,7 +519,14 @@ public class OrderServiceImpl implements OrderService {
             order.setStatus(OrderStatus.CANCELED);
             order.setOrderStatus(OrderStatus.CANCELED);  // 👈 Sync
             order.setPaymentStatus(PaymentStatus.CANCELLED);
-            return OrderResponse.fromEntity(orderRepository.save(order));
+            Order savedOrder = orderRepository.save(order);
+
+            // 👈 THÊM: Gửi email hủy đơn
+            if (oldStatus != OrderStatus.CANCELED) {
+                sendStatusUpdateEmailAsync(savedOrder, oldStatus, OrderStatus.CANCELED);
+            }
+
+            return OrderResponse.fromEntity(savedOrder);
         } catch (InvalidOrderTransitionException e) {
             log.error("Cancel flow violation for order {}: {}", orderId, e.getMessage());
             throw e;
@@ -527,6 +584,7 @@ public class OrderServiceImpl implements OrderService {
             }
 
             Order order = optionalOrder.get();
+            OrderStatus oldStatus = order.getStatus();  // 👈 THÊM: Lưu cũ
             if (order.getPaymentStatus() == PaymentStatus.PAID) {
                 log.info("Order {} already PAID", orderId);
                 return;
@@ -539,7 +597,13 @@ public class OrderServiceImpl implements OrderService {
             validateTransition(order, OrderStatus.PROCESSING, null);
             order.setStatus(OrderStatus.PROCESSING);
             order.setOrderStatus(OrderStatus.PROCESSING);  // 👈 Sync
-            orderRepository.save(order);
+            Order savedOrder = orderRepository.save(order);
+
+            // 👈 THÊM: Gửi email cập nhật từ webhook
+            if (oldStatus != OrderStatus.PROCESSING) {
+                sendStatusUpdateEmailAsync(savedOrder, oldStatus, OrderStatus.PROCESSING);
+            }
+
             log.info("SUCCESS: Updated order {} to PAID/PROCESSING via webhook", orderId);
         } catch (InvalidOrderTransitionException e) {
             log.warn("Webhook flow violation: {}", e.getMessage());
@@ -578,6 +642,7 @@ public class OrderServiceImpl implements OrderService {
         try {
             Order order = orderRepository.findById(orderId)
                     .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+            OrderStatus oldStatus = order.getStatus();  // 👈 THÊM: Lưu cũ
             if (!StringUtils.hasText(trackingNumber)) {
                 throw new IllegalArgumentException("Tracking number required");
             }
@@ -587,8 +652,15 @@ public class OrderServiceImpl implements OrderService {
                 order.setStatus(OrderStatus.SHIPPED);
                 order.setOrderStatus(OrderStatus.SHIPPED);  // 👈 Sync
             }
-            Hibernate.initialize(order.getOrderItems());
-            return OrderResponse.fromEntity(orderRepository.save(order));
+            Order savedOrder = orderRepository.save(order);
+
+            // 👈 THÊM: Gửi email nếu thay đổi status
+            if (oldStatus != order.getStatus()) {
+                sendStatusUpdateEmailAsync(savedOrder, oldStatus, order.getStatus());
+            }
+
+            Hibernate.initialize(savedOrder.getOrderItems());
+            return OrderResponse.fromEntity(savedOrder);
         } catch (Exception e) {
             log.error("Add tracking failed for order {}: {}", orderId, e.getMessage());
             throw e;
@@ -642,6 +714,7 @@ public class OrderServiceImpl implements OrderService {
             log.info("Found {} stuck SEPAY orders (WAITING_FOR_PAYMENT > {} min) for auto-cancel.", waitingOrders.size(), WAITING_TIMEOUT_MINUTES);
 
             for (Order order : waitingOrders) {
+                OrderStatus oldStatus = order.getStatus();  // 👈 THÊM: Lưu cũ
                 try {
                     // Validate transition (should always pass for this case)
                     order.getStatus().canTransitionTo(OrderStatus.CANCELED, order.getPaymentMethod(), order.getPaymentStatus());
@@ -654,7 +727,10 @@ public class OrderServiceImpl implements OrderService {
                     // Restore stock
                     restoreStock(order);
 
-                    orderRepository.save(order);
+                    Order savedOrder = orderRepository.save(order);
+
+                    // 👈 THÊM: Gửi email auto-cancel
+                    sendStatusUpdateEmailAsync(savedOrder, oldStatus, OrderStatus.CANCELED);
 
                     log.warn("Auto-canceled stuck SEPAY order {} (created at {}): Timeout after {} minutes. Restored stock.",
                             order.getId(), order.getCreatedAt(), WAITING_TIMEOUT_MINUTES);
@@ -687,11 +763,16 @@ public class OrderServiceImpl implements OrderService {
             log.info("Found {} old DELIVERED orders (> {} days) for auto-complete.", deliveredOrders.size(), COMPLETE_AFTER_DAYS);
 
             for (Order order : deliveredOrders) {
+                OrderStatus oldStatus = order.getStatus();  // 👈 THÊM: Lưu cũ
                 try {
                     if (order.getStatus().canTransitionTo(OrderStatus.COMPLETED, order.getPaymentMethod(), order.getPaymentStatus())) {
                         order.setStatus(OrderStatus.COMPLETED);
                         order.setOrderStatus(OrderStatus.COMPLETED);  // 👈 Sync
-                        orderRepository.save(order);
+                        Order savedOrder = orderRepository.save(order);
+
+                        // 👈 THÊM: Gửi email auto-complete
+                        sendStatusUpdateEmailAsync(savedOrder, oldStatus, OrderStatus.COMPLETED);
+
                         log.info("Auto-completed old DELIVERED order: {}", order.getId());
                     } else {
                         log.warn("Skipped auto-complete for order {}: Invalid transition (check payment status).", order.getId());
@@ -789,7 +870,5 @@ public class OrderServiceImpl implements OrderService {
             throw new RuntimeException("Lỗi tạo file Excel: " + e.getMessage(), e);
         }
     }
-
-
 
 }

@@ -83,6 +83,20 @@ public class User {
     @JsonIgnore
     private List<Address> addresses = new ArrayList<>();
 
+    @JsonIgnore
+    @Column(name = "otp_code", length = 6)
+    private String otpCode;
+
+    @JsonIgnore
+    @Column(name = "otp_expiry")
+    private LocalDateTime otpExpiry;
+
+    @Transient
+    public boolean isOtpValid(String inputOtp) {
+        return otpCode != null && otpExpiry != null
+                && !otpExpiry.isBefore(LocalDateTime.now())
+                && otpCode.equals(inputOtp);
+    }
 
     public void addAddress(Address address) {
         addresses.add(address);

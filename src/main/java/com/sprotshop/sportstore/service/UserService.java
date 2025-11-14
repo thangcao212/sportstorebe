@@ -33,5 +33,6 @@ public interface UserService {
     ApiResponse<Address> updateAddress(Long id, UpdateAddressRequest request);
     void deleteAddress(Long id);
 
-
+    ApiResponse<String> forgotPassword(String email);
+    ApiResponse<String> verifyOtpAndResetPassword(String email, String otp, String newPassword);
 }

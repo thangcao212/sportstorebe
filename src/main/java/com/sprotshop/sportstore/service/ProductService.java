@@ -34,5 +34,5 @@ public interface ProductService {
 
     public List<ProductResponse> importProductsFromExcel(MultipartFile excelFile) throws IOException;
 
-
+    public List<ProductResponse> getTopSellingProducts(int limit, boolean pastMonth);
 }

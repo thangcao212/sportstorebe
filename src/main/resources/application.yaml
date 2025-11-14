@@ -38,13 +38,29 @@ spring:
       host: localhost
       port: 6379
 
+  # Cấu hình SMTP cho Gmail (thêm mới)
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: caothang8107@gmail.com
+    password: vvmz uwiq vzso rdnz
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
   security:
     oauth2:
       client:
         registration:
           google:
-
-            scope:
+                        scope:
               - openid
               - profile
               - email
@@ -73,5 +89,5 @@ cloudinary:
 logging:
   level:
     org.springframework.security: DEBUG
-    com.sprotshop.sportstore.security: DEBUG
+    com.sportshop.sportstore.security: DEBUG  # Sửa từ "sprotshop" thành "sportshop"
     org.springframework.web: DEBUG

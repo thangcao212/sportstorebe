@@ -1,5 +1,6 @@
 package com.sprotshop.sportstore.service.impl;
 
+import com.sprotshop.sportstore.Enum.AuthProvider;
 import com.sprotshop.sportstore.Enum.UserRole;
 import com.sprotshop.sportstore.entity.*;
 import com.sprotshop.sportstore.exception.AlreadyExistsException;
@@ -13,6 +14,7 @@ import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.security.JwtUtils;
 
 import com.sprotshop.sportstore.service.CloudinaryService;
+import com.sprotshop.sportstore.service.EmailService;
 import com.sprotshop.sportstore.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
@@ -20,6 +22,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -34,6 +37,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.*;
 
 @Service
@@ -51,6 +55,7 @@ public class UserServiceImpl implements UserService {
     private final CloudinaryService cloudinaryService;
     private final ProvinceRepository provinceRepository;
     private final WardRepository wardRepository;
+    private final EmailService emailService;
 
     // 👈 REMOVED: private final DistrictRepository districtRepository; (no longer needed for 2-level address)
 
@@ -369,6 +374,109 @@ public class UserServiceImpl implements UserService {
         // Proceed with deletion
         user.removeAddress(address);  // Bidirectional + orphanRemoval
         userRepository.save(user);  // Trigger delete cascade
+    }
+
+
+
+    // 👈 VIẾT LẠI: Method gửi OTP (forgotPassword)
+    @Override
+    @Transactional
+    public ApiResponse<String> forgotPassword(String email) {
+        // Validate
+        if (email == null || email.trim().isEmpty() || !email.contains("@")) {
+            return ApiResponse.<String>builder()
+                    .message("Email không hợp lệ")
+                    .status(HttpStatus.BAD_REQUEST.value())
+                    .build();
+        }
+
+        // Tìm user
+        User user = userRepository.findByEmail(email.trim())
+                .orElseThrow(() -> new NotFoundException("Email không tồn tại"));
+
+        // Chỉ cho local user (có password)
+        if (user.getProvider() != AuthProvider.LOCAL || user.getPassword() == null) {
+            return ApiResponse.<String>builder()
+                    .message("Tài khoản Google không hỗ trợ reset mật khẩu. Dùng Google login.")
+                    .status(HttpStatus.BAD_REQUEST.value())
+                    .build();
+        }
+
+        // Tạo OTP 6 số random
+        String otp = String.format("%06d", new Random().nextInt(1000000));  // 000000 -> 999999
+        LocalDateTime expiry = LocalDateTime.now().plusMinutes(10);  // Expire 10 phút
+
+        // Clear OTP cũ
+        user.setOtpCode(null);
+        user.setOtpExpiry(null);
+
+        // Lưu OTP mới
+        user.setOtpCode(otp);
+        user.setOtpExpiry(expiry);
+        userRepository.save(user);
+
+        log.info("OTP generated for {}: {} (expires at {})", email, otp, expiry);
+
+        // Gửi email ASYNC
+        sendOtpEmailAsync(email, otp);
+
+        return ApiResponse.<String>builder()
+                .message("Mã OTP đã gửi qua email. Kiểm tra hộp thư (và spam) trong 10 phút!")
+                .status(HttpStatus.OK.value())
+                .build();
+    }
+
+    // 👈 THÊM: Async gửi email
+    @Async
+    public void sendOtpEmailAsync(String email, String otp) {
+        try {
+            emailService.sendOtpEmail(email, otp);
+        } catch (Exception e) {
+            log.error("Failed to send OTP to {}: {}", email, e.getMessage());
+        }
+    }
+
+    // 👈 MỚI: Method verify OTP + set password (gộp 2 bước cho đơn giản)
+    @Override
+    @Transactional
+    public ApiResponse<String> verifyOtpAndResetPassword(String email, String otp, String newPassword) {
+        // Validate
+        if (email == null || otp == null || newPassword == null) {
+            return ApiResponse.<String>builder().message("Thiếu thông tin").status(HttpStatus.BAD_REQUEST.value()).build();
+        }
+        if (newPassword.length() < 6) {
+            return ApiResponse.<String>builder().message("Mật khẩu mới phải >=6 ký tự").status(HttpStatus.BAD_REQUEST.value()).build();
+        }
+
+        // Tìm user với OTP valid
+        User user = userRepository.findByEmailAndValidOtp(email.trim(), otp.trim())
+                .orElseThrow(() -> new RuntimeException("Mã OTP không đúng hoặc đã hết hạn. Yêu cầu gửi lại."));
+
+        // Check provider
+        if (user.getProvider() != AuthProvider.LOCAL) {
+            clearOtpForUser(user);
+            throw new RuntimeException("Tài khoản không hỗ trợ reset.");
+        }
+
+        // Update password
+        user.setPassword(passwordEncoder.encode(newPassword));
+
+        // Clear OTP sau verify
+        clearOtpForUser(user);
+        userRepository.save(user);
+
+        log.info("OTP verified and password reset for: {}", email);
+
+        return ApiResponse.<String>builder()
+                .message("Xác thực thành công! Mật khẩu đã được cập nhật. Đăng nhập ngay nhé!")
+                .status(HttpStatus.OK.value())
+                .build();
+    }
+
+    // 👈 THÊM: Helper clear OTP
+    private void clearOtpForUser(User user) {
+        user.setOtpCode(null);
+        user.setOtpExpiry(null);
     }
 
 }

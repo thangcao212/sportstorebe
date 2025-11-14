@@ -201,4 +201,19 @@ public class ProductController {
                 .build();
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
+
+    // 👈 NEW: Public endpoint cho top-selling full products
+    @GetMapping("/top-selling")
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getTopSellingProducts(
+            @RequestParam(defaultValue = "8") int limit,
+            @RequestParam(defaultValue = "true") boolean pastMonth) {
+        log.info("GET /api/products/top-selling?limit={}&pastMonth={}", limit, pastMonth);
+        List<ProductResponse> topProducts = productService.getTopSellingProducts(limit, pastMonth);
+        ApiResponse<List<ProductResponse>> response = ApiResponse.<List<ProductResponse>>builder()
+                .message(topProducts.isEmpty() ? "Chưa có sản phẩm bán chạy" : "Top sản phẩm bán chạy")
+                .data(topProducts)
+                .status(HttpStatus.OK.value())
+                .build();
+        return ResponseEntity.ok(response);
+    }
 }
