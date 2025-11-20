@@ -6,9 +6,12 @@ import com.sprotshop.sportstore.repository.ProductCategoryRepository;
 import com.sprotshop.sportstore.request.ProductCategoryHierarchyRequest;
 import com.sprotshop.sportstore.request.ProductCategoryRequest;
 import com.sprotshop.sportstore.response.ProductCategoryResponse;
+import com.sprotshop.sportstore.service.CloudinaryService;
 import com.sprotshop.sportstore.service.ProductCategoryService;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
+
+import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate; // Import Hibernate
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,10 +22,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils; // Import CollectionUtils
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Class triển khai các dịch vụ quản lý Danh mục sản phẩm.
@@ -33,12 +41,13 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
 
     private static final Logger log = LoggerFactory.getLogger(ProductCategoryServiceImpl.class);
     private final ProductCategoryRepository productCategoryRepository; // Chỉ cần inject repo này
+    private final CloudinaryService cloudinaryService;
 
     // --- Implementation các phương thức chính từ Interface ---
 
     @Override
     @Transactional
-    public ProductCategoryResponse createCategory(ProductCategoryRequest categoryRequest) {
+    public ProductCategoryResponse createCategory(ProductCategoryRequest categoryRequest) throws IOException {
         log.info("Creating category: name='{}', parentId={}", categoryRequest.getName(), categoryRequest.getParentId());
         String normalizedName = categoryRequest.getName().toLowerCase();
         // Sử dụng hàm helper nội bộ để tìm parent entity
@@ -51,14 +60,19 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
                 .description(categoryRequest.getDescription())
                 .parent(parent)
                 .build();
+
+        // Process image upload if provided
+        processImageUpload(categoryRequest.getImage(), category, true);
+
         ProductCategory savedCategory = productCategoryRepository.save(category);
         log.info("Category created successfully: id={}", savedCategory.getId());
-        return ProductCategoryResponse.fromEntity(savedCategory);
+        // 👈 Sửa: Tính subtree product count cho response
+        return buildCategoryResponse(savedCategory);
     }
 
     @Override
     @Transactional
-    public ProductCategoryResponse updateCategory(Long id, ProductCategoryRequest categoryRequest) {
+    public ProductCategoryResponse updateCategory(Long id, ProductCategoryRequest categoryRequest) throws IOException {
         log.info("Updating category: id={}", id);
         // Sử dụng hàm helper nội bộ để tìm entity
         ProductCategory category = findCategoryEntityByIdInternal(id);
@@ -76,30 +90,46 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
         // Sử dụng hàm helper nội bộ để cập nhật parent và kiểm tra vòng lặp
         updateParentInternal(category, newParentId);
 
+        // Handle image update: delete old if specified, upload new if provided
+        if (StringUtils.hasText(categoryRequest.getImageIdToDelete()) &&
+                Objects.equals(categoryRequest.getImageIdToDelete(), category.getImageId())) {
+            deleteImageFromCloudinary(category.getImageId());
+            category.setImageUrl(null);
+            category.setImageId(null);
+            log.info("Old image deleted for category id: {}", id);
+        }
+        processImageUpload(categoryRequest.getImage(), category, false);
+
         ProductCategory updatedCategory = productCategoryRepository.save(category);
         log.info("Category updated successfully: id={}", updatedCategory.getId());
-        return ProductCategoryResponse.fromEntity(updatedCategory);
+        // 👈 Sửa: Tính subtree product count cho response
+        return buildCategoryResponse(updatedCategory);
     }
 
     @Override
     @Transactional
-    public void deleteCategory(Long id) {
+    public void deleteCategory(Long id) throws IOException {
         log.warn("Deleting category: id={}", id); // Log WARN cho hành động xóa
         ProductCategory category = findCategoryEntityByIdInternal(id);
 
         // Kiểm tra product collection trước khi xóa
-        // Cách an toàn nhất là dùng query count nếu có thể, nếu không thì kiểm tra Hibernate.isInitialized
-        // if (productRepository.countByCategory(category) > 0) { // Ví dụ nếu có hàm count
-        //     throw new IllegalStateException(...)
-        // }
         if (Hibernate.isInitialized(category.getProducts()) && !category.getProducts().isEmpty()) {
             log.error("Cannot delete category id={} because it contains products.", id);
             throw new IllegalStateException("Cannot delete category id=" + id + " as it contains products.");
         } else if (!Hibernate.isInitialized(category.getProducts())) {
             log.warn("Product collection for category id={} was not initialized. Assuming no products for deletion check.", id);
-            // Cân nhắc: có nên thực hiện query count ở đây để chắc chắn không?
-            // long productCount = productCategoryRepository.countProductsByCategoryId(id); // Ví dụ
-            // if (productCount > 0) throw new IllegalStateException(...);
+            // 👈 Sửa: Sử dụng query để kiểm tra chính xác
+            long subtreeProductCount = productCategoryRepository.countProductsInSubtree(id);
+            if (subtreeProductCount > 0) {
+                log.error("Cannot delete category id={} because subtree contains {} products.", id, subtreeProductCount);
+                throw new IllegalStateException("Cannot delete category id=" + id + " as its subtree contains " + subtreeProductCount + " products.");
+            }
+        }
+
+        // Delete image from Cloudinary if exists
+        if (StringUtils.hasText(category.getImageId())) {
+            deleteImageFromCloudinary(category.getImageId());
+            log.info("Image deleted from Cloudinary for category id: {}", id);
         }
 
         // Xử lý children
@@ -129,15 +159,20 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
     @Transactional(readOnly = true)
     public ProductCategoryResponse getCategoryById(Long id) {
         log.debug("Fetching category by id: {}", id);
-        // Dùng helper nội bộ tìm entity rồi convert sang DTO
-        return ProductCategoryResponse.fromEntity(findCategoryEntityByIdInternal(id));
+        ProductCategory category = findCategoryEntityByIdInternal(id);
+        // 👈 Sửa: Tính subtree product count cho response
+        return buildCategoryResponse(category);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<ProductCategoryResponse> getRootCategories() {
         log.debug("Fetching root categories");
-        return ProductCategoryResponse.fromEntities(productCategoryRepository.findByParentIsNull());
+        List<ProductCategory> roots = productCategoryRepository.findByParentIsNull();
+        // 👈 Sửa: Tính subtree cho từng root
+        return roots.stream()
+                .map(this::buildCategoryResponse)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -145,8 +180,11 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
     public List<ProductCategoryResponse> getChildCategories(Long parentId) {
         log.debug("Fetching children for parentId: {}", parentId);
         ProductCategory parent = findCategoryEntityByIdInternal(parentId);
-        // findByParent sẽ load children nếu cần
-        return ProductCategoryResponse.fromEntities(productCategoryRepository.findByParent(parent));
+        List<ProductCategory> children = productCategoryRepository.findByParent(parent);
+        // 👈 Sửa: Tính subtree cho từng child
+        return children.stream()
+                .map(this::buildCategoryResponse)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -156,15 +194,17 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
         // Gọi hàm helper nội bộ trả về entity lá
         ProductCategory leafCategory = findOrCreateCategoryHierarchyInternal(request.getCategoryNames());
         log.info("Hierarchy creation completed via endpoint. Leaf category id={}", leafCategory.getId());
-        // Convert entity lá sang DTO để trả về
-        return ProductCategoryResponse.fromEntity(leafCategory);
+        // 👈 Sửa: Tính subtree product count cho response (leaf)
+        return buildCategoryResponse(leafCategory);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<ProductCategoryResponse> getCategoriesPage(Pageable pageable) {
         log.debug("Fetching categories page: {}", pageable);
-        return productCategoryRepository.findAll(pageable).map(ProductCategoryResponse::fromEntity);
+        Page<ProductCategory> categoryPage = productCategoryRepository.findAll(pageable);
+        // 👈 Sửa: Tính subtree cho từng category trong page
+        return categoryPage.map(this::buildCategoryResponse);
     }
 
     @Override
@@ -172,7 +212,36 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
     public List<ProductCategoryResponse> getAllCategories() {
         log.debug("Fetching all categories");
         List<ProductCategory> categories = productCategoryRepository.findAll(); // Có thể thêm Sort.by("name")
-        return ProductCategoryResponse.fromEntities(categories);
+        // 👈 Sửa: Tính subtree cho tất cả
+        return categories.stream()
+                .map(this::buildCategoryResponse)
+                .collect(Collectors.toList());
+    }
+
+    // 👈 Thêm method helper mới để build Response với subtree product count
+    private ProductCategoryResponse buildCategoryResponse(ProductCategory category) {
+        ProductCategory parent = category.getParent();
+        Long parentIdValue = (parent != null) ? parent.getId() : null;
+        String parentNameValue = (parent != null) ? parent.getName() : null;
+
+        List<Long> childIdsValue = (category.getChildren() != null) ?
+                category.getChildren().stream().map(ProductCategory::getId).collect(Collectors.toList()) :
+                Collections.emptyList();
+
+        // 👈 Tính tổng sản phẩm trong subtree (category + tất cả con cái)
+        long subtreeCount = (category.getId() != null) ? productCategoryRepository.countProductsInSubtree(category.getId()) : 0L;
+
+        return ProductCategoryResponse.builder()
+                .id(category.getId())
+                .name(category.getName())
+                .description(category.getDescription())
+                .imageUrl(category.getImageUrl())
+                .imageId(category.getImageId())
+                .parentId(parentIdValue)
+                .parentName(parentNameValue)
+                .childrenIds(childIdsValue)
+                .productCount((int) subtreeCount) // Cast sang int, giả sử không quá 2^31
+                .build();
     }
 
     // --- Implementation các hàm helper trả về Entity (để ProductServiceImpl sử dụng) ---
@@ -328,5 +397,37 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
         }
         log.debug("Internal: Hierarchy processed. Leaf category: id={}", lastProcessedCategory.getId());
         return lastProcessedCategory;
+    }
+
+    // Helper: Process image upload (create or update)
+    private void processImageUpload(MultipartFile imageFile, ProductCategory category, boolean isCreate) throws IOException {
+        if (imageFile != null && !imageFile.isEmpty()) {
+            log.info("Processing image upload for category: {}", category.getName() != null ? category.getName() : "NEW");
+            // Delete old image if updating and new image provided
+            if (!isCreate && StringUtils.hasText(category.getImageId())) {
+                deleteImageFromCloudinary(category.getImageId());
+                log.info("Old image replaced for category id: {}", category.getId());
+            }
+            // Upload new image
+            Map uploadResult = cloudinaryService.upload(imageFile);
+            String imageUrl = (String) uploadResult.get("secure_url");
+            String imageId = (String) uploadResult.get("public_id");
+            category.setImageUrl(imageUrl);
+            category.setImageId(imageId);
+            log.debug("Image uploaded: URL={}, ID={} for category", imageUrl, imageId);
+        }
+    }
+
+    // Helper: Delete image from Cloudinary
+    private void deleteImageFromCloudinary(String imageId) throws IOException {
+        if (StringUtils.hasText(imageId)) {
+            try {
+                cloudinaryService.delete(imageId);
+                log.debug("Cloudinary image deleted: {}", imageId);
+            } catch (IOException e) {
+                log.error("Failed to delete Cloudinary image (id={}): {}", imageId, e.getMessage());
+                throw e; // Re-throw to handle in caller
+            }
+        }
     }
 }

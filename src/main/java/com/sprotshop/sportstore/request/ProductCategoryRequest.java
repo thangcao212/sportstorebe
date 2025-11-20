@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * DTO nhận dữ liệu tạo/cập nhật một danh mục.
@@ -23,4 +24,10 @@ public class ProductCategoryRequest {
     private String description;
 
     private Long parentId; // null nếu là danh mục gốc
+
+    // For image upload (single image for category)
+    private MultipartFile image;
+
+    // For update: optional imageId to delete old image
+    private String imageIdToDelete;
 }

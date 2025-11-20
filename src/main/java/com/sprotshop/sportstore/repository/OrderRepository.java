@@ -147,4 +147,30 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
             "WHERE o.status = 'COMPLETED' " +
             "GROUP BY p.id, p.name ORDER BY profit DESC")
     List<Object[]> findTopProductsByProfit(Pageable pageable);
+
+    // OrderRepository.java
+    // OrderRepository.java
+    // OrderRepository.java
+    // OrderRepository.java - sửa method này
+    @Query(value = """
+    SELECT 
+        p.id,
+        p.name,
+        (SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1) AS imageUrl,
+        p.price,
+        SUM(oi.quantity) AS totalSold,
+        COALESCE(p.average_rating, 0.0) AS avgRating,
+        COALESCE(p.review_count, 0) AS reviewCnt,
+        b.name AS brandName
+    FROM orders o
+    JOIN order_item oi ON o.id = oi.order_id
+    JOIN product p ON oi.product_id = p.id
+    LEFT JOIN brands b ON p.brand_id = b.id
+    WHERE o.status IN ('DELIVERED', 'COMPLETED')
+      AND o.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+    GROUP BY p.id, p.name, p.price, p.average_rating, p.review_count, b.name
+    ORDER BY totalSold DESC
+    LIMIT :limit
+    """, nativeQuery = true)
+    List<Object[]> findBestSellingProductsRaw(@Param("limit") int limit);
 }

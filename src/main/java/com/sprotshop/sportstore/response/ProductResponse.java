@@ -4,6 +4,8 @@ import com.sprotshop.sportstore.entity.Brand;
 import com.sprotshop.sportstore.entity.Image;
 import com.sprotshop.sportstore.entity.Product;
 import com.sprotshop.sportstore.entity.ProductSize;
+import com.sprotshop.sportstore.request.ProductCardDto;
+import jakarta.persistence.Column;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -35,7 +37,8 @@ public class ProductResponse {
     private String brandDescription;
     private String brandLogoUrl;
     private List<ProductSizeInfo> sizes; // Added sizes info
-
+    private BigDecimal averageRating ;
+    private Integer reviewCount ;
     @Data
     @Builder
     @NoArgsConstructor
@@ -112,6 +115,8 @@ public class ProductResponse {
                 .brandId(brandId)
                 .brandName(brandName)
                 .brandDescription(brandDesc)
+                .averageRating(product.getAverageRating())
+                .reviewCount(product.getReviewCount())
                 .brandLogoUrl(brandLogo)
                 .sizes(sizeInfos) // Add sizes to response
                 .build();
@@ -120,5 +125,39 @@ public class ProductResponse {
     public static List<ProductResponse> fromEntities(List<Product> products) {
         if (products == null || products.isEmpty()) return Collections.emptyList();
         return products.stream().map(ProductResponse::fromEntity).collect(Collectors.toList());
+    }
+    // ProductResponse.java - thêm vào cuối class
+    public static ProductCardDto toCardDto(Product product) {
+        if (product == null) return null;
+
+        String firstImage = product.getImages() != null && !product.getImages().isEmpty()
+                ? product.getImages().iterator().next().getImageUrl()
+                : "/images/default-product.jpg";
+
+        String brandName = product.getBrand() != null ? product.getBrand().getName() : null;
+
+        Double avgRating = product.getAverageRating() != null
+                ? product.getAverageRating().doubleValue()
+                : 0.0;
+
+        Integer reviewCnt = product.getReviewCount() != null ? product.getReviewCount() : 0;
+
+        return new ProductCardDto(
+                product.getId(),
+                product.getName(),
+                firstImage,
+                product.getPrice(),
+                Math.round(avgRating * 10.0) / 10.0,
+                reviewCnt,
+                brandName,
+                null
+        );
+    }
+
+    public static List<ProductCardDto> toCardDtos(List<Product> products) {
+        if (products == null || products.isEmpty()) return List.of();
+        return products.stream()
+                .map(ProductResponse::toCardDto)
+                .toList();
     }
 }

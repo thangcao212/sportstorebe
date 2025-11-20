@@ -1,9 +1,7 @@
 
 package com.sprotshop.sportstore.service;
 
-import com.sprotshop.sportstore.request.CreateOrderRequest;
-import com.sprotshop.sportstore.request.OrderSearchRequest;
-import com.sprotshop.sportstore.request.SepayWebhookRequest;
+import com.sprotshop.sportstore.request.*;
 import com.sprotshop.sportstore.response.OrderResponse;
 import com.sprotshop.sportstore.Enum.OrderStatus;
 import com.sprotshop.sportstore.response.PageResponse;
@@ -47,5 +45,5 @@ public interface OrderService {
 
     byte[] exportOrdersToExcel(OrderSearchRequest request);
 
-
+    List<ProductCardDto> getBestSellingProductsLast30Days(Integer limit);
 }

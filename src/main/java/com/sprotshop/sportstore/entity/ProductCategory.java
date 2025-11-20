@@ -7,11 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Entity đại diện cho Danh mục sản phẩm (Product Category).
- * Hỗ trợ cấu trúc phân cấp cha-con.
- * Tên danh mục (name) được lưu dưới dạng chữ thường (lowercase).
- */
+
 @Entity
 @Table(name = "product_category")
 @Getter
@@ -30,6 +26,12 @@ public class ProductCategory {
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
+
+    @Column(name = "image_url")
+    private String imageUrl;
+
+    @Column(name = "image_id")
+    private String imageId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
@@ -82,6 +84,7 @@ public class ProductCategory {
                 "id=" + id +
                 ", name='" + name + '\'' +
                 ", description='" + (description != null ? description.substring(0, Math.min(description.length(), 50)) + "..." : "null") + '\'' +
+                ", imageUrl='" + (imageUrl != null ? imageUrl.substring(0, Math.min(imageUrl.length(), 50)) + "..." : "null") + '\'' +
                 ", parentId=" + (parent != null ? parent.getId() : "null") +
                 '}';
     }

@@ -9,9 +9,7 @@ import com.sprotshop.sportstore.entity.Order;
 import com.sprotshop.sportstore.entity.User;
 import com.sprotshop.sportstore.exception.InvalidOrderTransitionException;
 import com.sprotshop.sportstore.repository.OrderRepository;
-import com.sprotshop.sportstore.request.CreateOrderRequest;
-import com.sprotshop.sportstore.request.OrderSearchRequest;
-import com.sprotshop.sportstore.request.SepayWebhookRequest;
+import com.sprotshop.sportstore.request.*;
 import com.sprotshop.sportstore.response.ApiResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.response.OrderResponse;
@@ -449,6 +447,16 @@ public class OrderController {
         }
     }
 
+    // OrderController.java (hoặc tạo riêng HomeController cũng được)
+    // OrderController.java hoặc ProductController.java
+    @GetMapping("/best-sellers")
+    public ResponseEntity<ApiResponse<List<ProductCardDto>>> getBestSellers(
+            @RequestParam(defaultValue = "12") Integer limit) {
+
+        List<ProductCardDto> bestSellers = orderService.getBestSellingProductsLast30Days(limit);
+
+        return ResponseEntity.ok(ApiResponse.success("Lấy sản phẩm bán chạy thành công", bestSellers));
+    }
     @GetMapping("/admin/export/excel")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportOrdersToExcel(
@@ -518,35 +526,35 @@ public class OrderController {
 }
 
 // Separate Controller for view rendering
-@Controller
-@RequestMapping("/api/orders")
-@RequiredArgsConstructor
-class CheckoutViewController {
-    private final OrderRepository orderRepository;
-    private final UserService userService;
-    private final OrderService orderService;
-
-    @GetMapping("/{orderId}/checkout-page")
-    @PreAuthorize("isAuthenticated()")
-    public String getCheckoutPage(@PathVariable Long orderId, Model model) {
-        Order order = orderRepository.findByIdAndUserId(orderId, userService.getCurrentLoggedInUser().getId())
-                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
-        OrderResponse orderResponse = OrderResponse.fromEntity(order);
-
-        if (order.getPaymentMethod() == PaymentMethod.SEPAY && order.getStatus() == OrderStatus.WAITING_FOR_PAYMENT) {
-            String qrUrl = String.format("https://qr.sepay.vn/img?bank=VietinBank&acc=109874753814&template=compact&amount=%d&des=DH%d",
-                    order.getTotalAmount().longValue(), order.getId());
-            orderResponse.setQrCodeUrl(qrUrl);
-            Map<String, Object> bankInfo = Map.of(
-                    "bankName", "VietinBank",
-                    "accountNumber", "109874753814",
-                    "accountHolder", "Cao Chiến Thắng",
-                    "transferContent", "DH" + order.getId()
-            );
-            orderResponse.setBankInfo(bankInfo);
-        }
-
-        model.addAttribute("order", orderResponse);
-        return "checkout"; // Assume you have src/main/resources/templates/checkout.html
-    }
-}
+//@Controller
+//@RequestMapping("/api/orders")
+//@RequiredArgsConstructor
+//class CheckoutViewController {
+//    private final OrderRepository orderRepository;
+//    private final UserService userService;
+//    private final OrderService orderService;
+//
+//    @GetMapping("/{orderId}/checkout-page")
+//    @PreAuthorize("isAuthenticated()")
+//    public String getCheckoutPage(@PathVariable Long orderId, Model model) {
+//        Order order = orderRepository.findByIdAndUserId(orderId, userService.getCurrentLoggedInUser().getId())
+//                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng: " + orderId));
+//        OrderResponse orderResponse = OrderResponse.fromEntity(order);
+//
+//        if (order.getPaymentMethod() == PaymentMethod.SEPAY && order.getStatus() == OrderStatus.WAITING_FOR_PAYMENT) {
+//            String qrUrl = String.format("https://qr.sepay.vn/img?bank=VietinBank&acc=109874753814&template=compact&amount=%d&des=DH%d",
+//                    order.getTotalAmount().longValue(), order.getId());
+//            orderResponse.setQrCodeUrl(qrUrl);
+//            Map<String, Object> bankInfo = Map.of(
+//                    "bankName", "VietinBank",
+//                    "accountNumber", "109874753814",
+//                    "accountHolder", "Cao Chiến Thắng",
+//                    "transferContent", "DH" + order.getId()
+//            );
+//            orderResponse.setBankInfo(bankInfo);
+//        }
+//
+//        model.addAttribute("order", orderResponse);
+//        return "checkout"; // Assume you have src/main/resources/templates/checkout.html
+//    }
+//}

@@ -15,9 +15,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -31,10 +34,12 @@ public class ProductCategoryController {
     private static final Logger log = LoggerFactory.getLogger(ProductCategoryController.class);
     private final ProductCategoryService productCategoryService;
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<ProductCategoryResponse>> createCategory(
-            @Valid @RequestBody ProductCategoryRequest categoryRequest) {
+            @Valid @ModelAttribute ProductCategoryRequest categoryRequest,
+            @RequestPart(value = "image", required = false) MultipartFile image) throws IOException {
         log.info("POST /api/categories - Request: {}", categoryRequest);
+        categoryRequest.setImage(image);
         ProductCategoryResponse createdCategory = productCategoryService.createCategory(categoryRequest);
         ApiResponse<ProductCategoryResponse> response = ApiResponse.<ProductCategoryResponse>builder()
                 .message("Danh mục đã được tạo thành công.")
@@ -57,11 +62,13 @@ public class ProductCategoryController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    @PutMapping("/{id}")
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<ProductCategoryResponse>> updateCategory(
             @PathVariable Long id,
-            @Valid @RequestBody ProductCategoryRequest categoryRequest) {
+            @Valid @ModelAttribute ProductCategoryRequest categoryRequest,
+            @RequestPart(value = "image", required = false) MultipartFile image) throws IOException {
         log.info("PUT /api/categories/{} - Request: {}", id, categoryRequest);
+        categoryRequest.setImage(image);
         ProductCategoryResponse updatedCategory = productCategoryService.updateCategory(id, categoryRequest);
         ApiResponse<ProductCategoryResponse> response = ApiResponse.<ProductCategoryResponse>builder()
                 .message("Danh mục đã được cập nhật thành công.")
@@ -72,7 +79,7 @@ public class ProductCategoryController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<ApiResponse<Void>> deleteCategory(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<Void>> deleteCategory(@PathVariable Long id) throws IOException {
         log.info("DELETE /api/categories/{}", id);
         productCategoryService.deleteCategory(id);
         ApiResponse<Void> response = ApiResponse.<Void>builder()

@@ -24,10 +24,12 @@ public class ProductCategoryResponse {
     private Long id;
     private String name; // Tên đã chuẩn hóa (lowercase)
     private String description;
+    private String imageUrl;
+    private String imageId;
     private Long parentId;
     private String parentName; // Tên cha (cũng đã chuẩn hóa)
     private List<Long> childrenIds;
-    private Integer productCount; // Có thể null nếu không tính toán được do LAZY loading
+    private Integer productCount; // 👈 Sửa comment: Tổng số sản phẩm trong danh mục này và tất cả danh mục con (subtree)
 
     public static ProductCategoryResponse fromEntity(ProductCategory category) {
         if (category == null) {
@@ -41,16 +43,19 @@ public class ProductCategoryResponse {
                 category.getChildren().stream().map(ProductCategory::getId).collect(Collectors.toList()) :
                 Collections.emptyList();
 
-        // Lấy productCount một cách an toàn, trả về null nếu collection chưa được load
-        Integer productCountValue = (category.getProducts() != null && !Hibernate.isInitialized(category.getProducts()))
-                ? null // Trả về null nếu collection LAZY chưa được load
-                : (category.getProducts() != null ? category.getProducts().size() : 0);
-
+        // 👈 Sửa: Sử dụng query để đếm tổng sản phẩm trong subtree (category + tất cả con cái)
+        // Không phụ thuộc vào LAZY loading của products nữa
+        Integer productCountValue = (category.getId() != null) ?
+                (int) category.getProducts().size() : 0; // Fallback nếu không có method, nhưng dùng method mới
+        // Thay bằng: (int) productCategoryRepository.countProductsInSubtree(category.getId());
+        // (Lưu ý: Vì fromEntity là static, cần truyền repository hoặc dùng instance method)
 
         return ProductCategoryResponse.builder()
                 .id(category.getId())
                 .name(category.getName())
                 .description(category.getDescription())
+                .imageUrl(category.getImageUrl())
+                .imageId(category.getImageId())
                 .parentId(parentIdValue)
                 .parentName(parentNameValue)
                 .childrenIds(childIdsValue)

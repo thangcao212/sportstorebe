@@ -6,10 +6,7 @@ import com.sprotshop.sportstore.Enum.PaymentStatus;
 import com.sprotshop.sportstore.entity.*;
 import com.sprotshop.sportstore.exception.*;
 import com.sprotshop.sportstore.repository.*;
-import com.sprotshop.sportstore.request.ApplyCouponRequest;
-import com.sprotshop.sportstore.request.CreateOrderRequest;
-import com.sprotshop.sportstore.request.OrderSearchRequest;
-import com.sprotshop.sportstore.request.SepayWebhookRequest;
+import com.sprotshop.sportstore.request.*;
 import com.sprotshop.sportstore.response.OrderResponse;
 import com.sprotshop.sportstore.response.PageResponse;
 import com.sprotshop.sportstore.service.*;
@@ -871,4 +868,36 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
+    // Trong OrderServiceImpl
+    // OrderServiceImpl.java
+    @Override
+    public List<ProductCardDto> getBestSellingProductsLast30Days(Integer limit) {
+        int safeLimit = (limit == null || limit <= 0) ? 12 : Math.min(limit, 50);
+
+        return orderRepository.findBestSellingProductsRaw(safeLimit)
+                .stream()
+                .map(row -> {
+                    String imageUrl = (String) row[2];
+                    if (imageUrl == null || imageUrl.isBlank()) {
+                        imageUrl = "/images/default-product.jpg";
+                    }
+
+                    BigDecimal price = row[3] instanceof BigDecimal bd ? bd : BigDecimal.valueOf(((Number) row[3]).doubleValue());
+                    Double avgRating = row[5] instanceof Number n ? n.doubleValue() : 0.0;
+                    Integer reviewCount = row[6] instanceof Number n ? n.intValue() : 0;
+                    String brandName = (String) row[7]; // ← Đây chính là cái mới!
+
+                    return new ProductCardDto(
+                            ((Number) row[0]).longValue(),
+                            (String) row[1],
+                            imageUrl,
+                            price,
+                            Math.round(avgRating * 10.0) / 10.0,
+                            reviewCount,
+                            brandName,   // ← Giờ có tên thương hiệu rồi!
+                            null
+                    );
+                })
+                .toList();
+    }
 }

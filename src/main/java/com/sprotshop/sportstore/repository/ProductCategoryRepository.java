@@ -26,4 +26,16 @@ public interface ProductCategoryRepository extends JpaRepository<ProductCategory
             "  JOIN category_tree ct ON c.parent_id = ct.id " +
             ") SELECT id FROM category_tree", nativeQuery = true)
     List<Long> findAllDescendantIds(@Param("categoryId") Long categoryId);
+
+    @Query(value = """
+        WITH RECURSIVE category_tree AS (
+            SELECT id FROM product_category WHERE id = :categoryId
+            UNION ALL
+            SELECT c.id FROM product_category c
+            INNER JOIN category_tree ct ON c.parent_id = ct.id
+        )
+        SELECT COUNT(*) FROM product p
+        INNER JOIN category_tree ct ON p.category_id = ct.id
+        """, nativeQuery = true)
+    long countProductsInSubtree(@Param("categoryId") Long categoryId);
 }

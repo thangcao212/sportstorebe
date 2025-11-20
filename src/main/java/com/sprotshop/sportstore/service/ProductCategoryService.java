@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -16,11 +17,11 @@ import java.util.List;
  */
 public interface ProductCategoryService {
 
-    ProductCategoryResponse createCategory(ProductCategoryRequest categoryRequest);
+    ProductCategoryResponse createCategory(ProductCategoryRequest categoryRequest) throws IOException;
 
-    ProductCategoryResponse updateCategory(Long id, ProductCategoryRequest categoryRequest);
+    ProductCategoryResponse updateCategory(Long id, ProductCategoryRequest categoryRequest) throws IOException;
 
-    void deleteCategory(Long id);
+    void deleteCategory(Long id) throws IOException;
 
     ProductCategoryResponse getCategoryById(Long id);
 

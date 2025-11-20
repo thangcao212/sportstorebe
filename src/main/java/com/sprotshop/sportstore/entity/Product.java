@@ -136,4 +136,10 @@ public class Product {
             review.setProduct(null);
         }
     }
+
+    @Column(name = "average_rating", precision = 3, scale = 2)
+    private BigDecimal averageRating = BigDecimal.ZERO;
+
+    @Column(name = "review_count")
+    private Integer reviewCount = 0;
 }

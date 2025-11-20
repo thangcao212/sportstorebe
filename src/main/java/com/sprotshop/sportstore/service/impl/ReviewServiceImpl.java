@@ -35,6 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -421,17 +423,30 @@ public class ReviewServiceImpl implements ReviewService {
     }
 
     private void updateProductRating(Long productId) {
-        List<Review> reviews = reviewRepository.findByProductIdAndStatus(productId, ReviewStatus.APPROVED);
-        if (!reviews.isEmpty()) {
-            double avgRating = reviews.stream()
+        List<Review> approvedReviews = reviewRepository.findByProductIdAndStatus(productId, ReviewStatus.APPROVED);
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new NotFoundException("Product not found: " + productId));
+
+        if (approvedReviews.isEmpty()) {
+            product.setAverageRating(BigDecimal.ZERO);
+            product.setReviewCount(0);
+        } else {
+            double tempAvg = approvedReviews.stream()
                     .mapToInt(Review::getRating)
                     .average()
                     .orElse(0.0);
-            Product product = productRepository.findById(productId).orElseThrow();
-            // product.setAverageRating((float) avgRating); // Uncomment nếu Product có field này
-            productRepository.save(product);
-            log.debug("Updated average rating for product {}: {}", productId, avgRating);
+
+            BigDecimal avgRating = BigDecimal.valueOf(tempAvg)
+                    .setScale(2, RoundingMode.HALF_UP); // Đây chính là dòng bạn cần!
+
+            product.setAverageRating(avgRating);
+            product.setReviewCount(approvedReviews.size());
         }
+
+        productRepository.save(product);
+        log.info("Đã cập nhật rating sản phẩm {}: {} ⭐ ({} đánh giá)",
+                productId, product.getAverageRating(), product.getReviewCount());
     }
 
     @Override

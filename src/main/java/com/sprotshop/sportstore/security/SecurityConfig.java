@@ -47,9 +47,13 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/products/**").permitAll()
                         .requestMatchers("/api/orders/sepay-webhook").permitAll()
+                        .requestMatchers("api/orders/best-sellers/**").permitAll()
                         .requestMatchers("/api/categories/**").permitAll()
+                        .requestMatchers("/api/banners/**").permitAll()
                         .requestMatchers("/redis/**").permitAll()
                         .requestMatchers("/api/reviews/**").permitAll()
+                        .requestMatchers("/api/brands/**").permitAll()
+
 
                         // 👈 STOMP destinations: Permit for topics/queues (auth in message interceptor nếu cần)
                         // Trong SecurityConfig.java, thêm vào authorizeHttpRequests:

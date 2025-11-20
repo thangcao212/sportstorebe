@@ -89,5 +89,5 @@ cloudinary:
 logging:
   level:
     org.springframework.security: DEBUG
-    com.sportshop.sportstore.security: DEBUG  # Sửa từ "sprotshop" thành "sportshop"
+    com.sportshop.sportstore.security: DEBUG
     org.springframework.web: DEBUG
