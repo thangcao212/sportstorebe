@@ -66,18 +66,24 @@ public class OrderStatsService {
     public Map<String, Object> getSummary() {
         Map<String, Object> summary = new HashMap<>();
         summary.put("totalOrders", orderRepository.count());
+
+        // Doanh thu thực thu của khách (vẫn giữ nguyên để hiển thị)
         BigDecimal totalRevenue = orderRepository.sumTotalAmount();
         summary.put("totalRevenue", totalRevenue != null ? totalRevenue : BigDecimal.ZERO);
-        // 👈 NEW: Thêm totalProfit = totalRevenue - totalCost
-        BigDecimal totalCost = orderRepository.sumTotalCost();
-        summary.put("totalCost", totalCost != null ? totalCost : BigDecimal.ZERO);
+
+        // XÓA 2 DÒNG CŨ NÀY ĐI (không cần nữa)
+        // BigDecimal totalCost = orderRepository.sumTotalCost();
+        // summary.put("totalCost", totalCost != null ? totalCost : BigDecimal.ZERO);
+
+        // DÙNG CÁI MỚI – LỢI NHUẬN CHUẨN KẾ TOÁN
         BigDecimal totalProfit = orderRepository.sumTotalProfit();
         summary.put("totalProfit", totalProfit != null ? totalProfit : BigDecimal.ZERO);
+
         summary.put("totalCanceled", orderRepository.countByStatus(OrderStatus.CANCELED));
         summary.put("totalCompleted", orderRepository.countByStatus(OrderStatus.COMPLETED));
+
         return summary;
     }
-
     public Map<String, Long> getOrderStatusRatio() {
         List<Object[]> results = orderRepository.countOrdersByStatus();
         Map<String, Long> map = new HashMap<>();

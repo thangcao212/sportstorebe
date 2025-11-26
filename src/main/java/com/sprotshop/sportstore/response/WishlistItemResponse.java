@@ -19,7 +19,8 @@ public class WishlistItemResponse {
     private Long productId;
     private String productName;
     private BigDecimal productPrice;
-    private String size;
+//    private String size;
+private String productImageUrl;
 
     public static WishlistItemResponse fromEntity(WishlistItem item) {
         Product product = item.getProduct();
@@ -28,7 +29,10 @@ public class WishlistItemResponse {
                 .productId(product.getId())
                 .productName(product.getName())
                 .productPrice(product.getPrice())
-                .size(item.getSize())
+                .productImageUrl(item.getProduct().getImages().stream().findFirst()
+                        .map(image -> image.getImageUrl()).orElse(null))
+
+//                .size(item.getSize())
                 .build();
     }
 }

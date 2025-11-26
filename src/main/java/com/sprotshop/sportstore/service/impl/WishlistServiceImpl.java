@@ -54,43 +54,31 @@ public class WishlistServiceImpl implements WishlistService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "userWishlist", key = "#root.target.userService.getCurrentLoggedInUser().id")
     public WishlistResponse addToWishlist(WishlistItemRequest request) {
-        try {
-            User currentUser = userService.getCurrentLoggedInUser();
-            Long userId = currentUser.getId();
-            log.info("Adding to wishlist for userId: {}, productId: {}", userId, request.getProductId());
-            Product product = productRepository.findById(request.getProductId())
-                    .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm: " + request.getProductId()));
+        User currentUser = userService.getCurrentLoggedInUser();
+        Product product = productRepository.findById(request.getProductId())
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm"));
 
-            Wishlist wishlist = createOrGetWishlistInternal(currentUser);  // Internal call
+        Wishlist wishlist = createOrGetWishlistInternal(currentUser);
 
-            // Check duplicate (giả sử repo có method findByWishlistIdAndProductIdAndSize)
-            Optional<WishlistItem> existing = wishlistItemRepository.findByWishlistIdAndProductId(
-                    wishlist.getId(), product.getId());
-            if (existing.isPresent()) {
-                throw new IllegalStateException("Sản phẩm đã có trong wishlist");
-            }
 
-            WishlistItem item = WishlistItem.builder()
-                    .wishlist(wishlist)
-                    .product(product)
-                    .size(request.getSize())
-                    .build();
-            wishlistItemRepository.save(item);
-            wishlist.addWishlistItem(item);
-            wishlistRepository.save(wishlist);
-            log.info("Item added to wishlist successfully");
-            return WishlistResponse.fromEntity(wishlist);
-        } catch (Exception e) {
-            log.error("Add to wishlist failed: {}", e.getMessage(), e);
-            throw e;
-        }
+        wishlist.getWishlistItems().stream()
+                .filter(item -> item.getProduct().getId().equals(product.getId()))
+                .findFirst()
+                .ifPresent(item -> { throw new IllegalStateException("Sản phẩm đã có trong wishlist"); });
+
+        WishlistItem item = WishlistItem.builder()
+                .wishlist(wishlist)
+                .product(product)
+                .build();
+
+        wishlist.addWishlistItem(item);
+        wishlistRepository.save(wishlist);
+
+        return WishlistResponse.fromEntity(wishlist);
     }
-
     @Override
     @Transactional
-    @CacheEvict(value = "userWishlist", key = "#root.target.userService.getCurrentLoggedInUser().id")
     public WishlistResponse removeFromWishlist(Long productId) {
         try {
             User currentUser = userService.getCurrentLoggedInUser();
@@ -116,7 +104,6 @@ public class WishlistServiceImpl implements WishlistService {
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(value = "userWishlist", key = "#root.target.userService.getCurrentLoggedInUser().id")
     public WishlistResponse getWishlistByCurrentUser() {
         try {
             User currentUser = userService.getCurrentLoggedInUser();

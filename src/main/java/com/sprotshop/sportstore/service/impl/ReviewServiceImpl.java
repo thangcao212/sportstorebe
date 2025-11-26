@@ -73,7 +73,7 @@ public class ReviewServiceImpl implements ReviewService {
                 log.warn("User {} has not completed purchase for product {}", userId, request.getProductId());
                 throw new InvalidReviewException("Bạn chỉ có thể đánh giá sản phẩm đã mua và hoàn thành.");
             }
-            log.debug("Found {} completed order items for validation", purchasedItems.size());
+//            log.debug("Found {} completed order items for validation", purchasedItems.size());
             // 2. FIXED: Check duplicate review - dùng List để handle multiple, check !isEmpty()
             List<Review> existingReviews = reviewRepository.findByUserIdAndProductId(userId, request.getProductId());
             if (!existingReviews.isEmpty()) {

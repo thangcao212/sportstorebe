@@ -19,16 +19,16 @@ public class CreateOrderRequest {
     @NotBlank(message = "Phone number is required")
     private String phone;
 
-    @NotBlank(message = "Street address is required")
+//    @NotBlank(message = "Street address is required")
     private String street;
 
-    @NotNull(message = "Province code is required")
+//    @NotNull(message = "Province code is required")
     private Integer provinceCode;
 
 //    @NotNull(message = "District code is required")
 //    private Integer districtCode;
 
-    @NotNull(message = "Ward code is required")
+//    @NotNull(message = "Ward code is required")
     private Integer wardCode;
 
     private String notes;

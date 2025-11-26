@@ -63,4 +63,13 @@ public class Coupon {
 
     // Nested enum (if not separate)
 
+
+    // ← MỚI: CAP tiền giảm tối đa (bắt buộc với %)
+    @Column(precision = 19, scale = 2)
+    private BigDecimal maxDiscountAmount;
+
+    // ← MỚI: Chỉ áp % nếu đơn ≤ giá trị này (tùy chọn, rất an toàn)
+    @Column(precision = 19, scale = 2)
+    private BigDecimal maxApplicableOrderValue;
+
 }

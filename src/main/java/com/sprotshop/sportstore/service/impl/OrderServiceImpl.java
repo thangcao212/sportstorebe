@@ -88,6 +88,7 @@ public class OrderServiceImpl implements OrderService {
             Long userId = currentUser.getId();
             log.info("Creating order for userId: {}", userId);
 
+            // === 1. Kiểm tra giỏ hàng ===
             Cart cart = cartRepository.findByUserId(userId)
                     .orElseThrow(() -> new NotFoundException("Không tìm thấy giỏ hàng cho user ID: " + userId));
 
@@ -95,48 +96,44 @@ public class OrderServiceImpl implements OrderService {
                 throw new IllegalStateException("Giỏ hàng trống");
             }
 
+            // === 2. Tính tổng tiền sản phẩm + kiểm tra tồn kho ===
             Map<String, Integer> productSizeQuantityMap = new HashMap<>();
             Map<String, BigDecimal> priceAtOrderMap = new HashMap<>();
             BigDecimal itemsTotal = BigDecimal.ZERO;
             Map<String, Integer> stockUpdates = new HashMap<>();
 
             for (CartItem cartItem : cart.getCartItems()) {
-                try {
-                    Product product = cartItem.getProduct();
-                    String size = cartItem.getSize();
-                    int quantity = cartItem.getQuantity();
-                    String productSizeKey = product.getId() + "-" + size;
+                Product product = cartItem.getProduct();
+                String size = cartItem.getSize();
+                int quantity = cartItem.getQuantity();
+                String key = product.getId() + "-" + size;
 
-                    ProductSize variant = productSizeRepository.findByProductIdAndSize(product.getId(), size)
-                            .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + product.getId() + ", size: " + size));
-                    if (variant.getStockQuantity() < quantity) {
-                        throw new IllegalStateException("Sản phẩm hết hàng cho kích thước " + size + ": " + product.getName());
-                    }
+                ProductSize variant = productSizeRepository.findByProductIdAndSize(product.getId(), size)
+                        .orElseThrow(() -> new NotFoundException("Không tìm thấy size: " + size + " cho sản phẩm ID: " + product.getId()));
 
-                    BigDecimal price = product.getPrice();
-                    productSizeQuantityMap.put(productSizeKey, quantity);
-                    priceAtOrderMap.put(productSizeKey, price);
-                    itemsTotal = itemsTotal.add(price.multiply(BigDecimal.valueOf(quantity)));
-                    stockUpdates.put(productSizeKey, quantity);
-                } catch (NotFoundException | IllegalStateException e) {
-                    log.warn("Stock check failed for cartItem {}: {}", cartItem.getId(), e.getMessage());
-                    throw e;
+                if (variant.getStockQuantity() < quantity) {
+                    throw new IllegalStateException("Hết hàng: " + product.getName() + " (size " + size + ")");
                 }
+
+                BigDecimal price = product.getPrice();
+                productSizeQuantityMap.put(key, quantity);
+                priceAtOrderMap.put(key, price);
+                itemsTotal = itemsTotal.add(price.multiply(BigDecimal.valueOf(quantity)));
+                stockUpdates.put(key, quantity);
             }
 
-            // Handle Address
+            // === 3. Xử lý địa chỉ giao hàng ===
             Address address;
             Integer provinceCodeForShip;
             if (request.getAddressId() != null) {
                 address = addressRepository.findByIdAndUserId(request.getAddressId(), userId)
-                        .orElseThrow(() -> new NotFoundException("Địa chỉ không tồn tại hoặc không thuộc user: " + request.getAddressId()));
+                        .orElseThrow(() -> new NotFoundException("Địa chỉ không tồn tại hoặc không thuộc bạn"));
                 provinceCodeForShip = address.getProvinceCode();
-                log.info("Used existing address ID: {} for order", request.getAddressId());
             } else {
                 Province province = provinceRepository.findById(request.getProvinceCode())
-                        .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ: " + request.getProvinceCode()));
+                        .orElseThrow(() -> new NotFoundException("Mã tỉnh không hợp lệ"));
                 Ward ward = wardRepository.findById(request.getWardCode())
-                        .orElseThrow(() -> new NotFoundException("Mã xã không hợp lệ: " + request.getWardCode()));
+                        .orElseThrow(() -> new NotFoundException("Mã xã không hợp lệ"));
 
                 String fullAddress = String.format("%s, %s, %s", request.getStreet(), ward.getName(), province.getName());
                 address = Address.builder()
@@ -150,73 +147,83 @@ public class OrderServiceImpl implements OrderService {
                 currentUser.addAddress(address);
                 userRepository.save(currentUser);
                 provinceCodeForShip = request.getProvinceCode();
-                log.info("Created and linked new address for user: {}", userId);
             }
-
             String snapshotAddress = address.getFullAddress();
 
+            // === 4. Tính phí ship ===
             BigDecimal shippingFee = calculateShippingFee(provinceCodeForShip);
-            log.info("Calculated shipping fee: {} for provinceCode: {}", shippingFee, provinceCodeForShip);
+            BigDecimal orderTotalBeforeDiscount = itemsTotal.add(shippingFee); // Tổng trước khi giảm
 
-            BigDecimal orderTotalForCoupon = itemsTotal.add(shippingFee);
-            BigDecimal originalTotalAmount = orderTotalForCoupon;
+            // === 5. ÁP DỤNG COUPON – ĐÃ CÓ CAP, AN TOÀN 100% ===
             BigDecimal discountAmount = BigDecimal.ZERO;
             String appliedCouponCode = null;
             Coupon appliedCoupon = null;
 
-            // 👈 FIXED: Apply single coupon (first valid from list if multiple sent)
             if (StringUtils.hasText(request.getCouponCode())) {
+                String couponCode = request.getCouponCode().trim().toUpperCase();
                 try {
                     ApplyCouponRequest applyReq = ApplyCouponRequest.builder()
-                            .code(request.getCouponCode().trim().toUpperCase())
-                            .orderTotal(orderTotalForCoupon)
+                            .code(couponCode)
+                            .orderTotal(orderTotalBeforeDiscount) // ← Dùng tổng trước giảm để tính % chính xác
                             .build();
+
+                    // ← applyCoupon() đã có CAP + giới hạn đơn tối đa → an toàn tuyệt đối
                     discountAmount = couponService.applyCoupon(applyReq);
-                    appliedCouponCode = request.getCouponCode().trim();
-                    appliedCoupon = couponRepository.findByCode(applyReq.getCode())
-                            .orElseThrow(() -> new NotFoundException("Không tìm thấy coupon: " + applyReq.getCode()));
-                    log.info("Coupon applied: code={}, discount={}", appliedCouponCode, discountAmount);
+
+                    appliedCoupon = couponRepository.findByCode(couponCode)
+                            .orElse(null);
+                    appliedCouponCode = couponCode;
+
+                    log.info("Áp dụng coupon thành công: {} → Giảm: {}đ", appliedCouponCode, discountAmount);
+
                 } catch (NotFoundException | InvalidCouponException e) {
-                    log.warn("Coupon apply failed (continue without): {}", e.getMessage());
+                    log.warn("Coupon không hợp lệ hoặc không áp dụng được: {} → Tiếp tục không giảm giá", e.getMessage());
+                    // → Không throw, chỉ bỏ qua coupon → đơn vẫn tạo bình thường
+                } catch (Exception e) {
+                    log.error("Lỗi không mong muốn khi áp dụng coupon: {}", e.getMessage(), e);
                 }
             }
 
-            BigDecimal totalAmount = orderTotalForCoupon.subtract(discountAmount);
+            // === 6. Tính tổng cuối cùng ===
+            BigDecimal totalAmount = orderTotalBeforeDiscount.subtract(discountAmount);
 
+            // === 7. Tạo đơn hàng ===
             OrderStatus initialStatus = (request.getPaymentMethod() == PaymentMethod.SEPAY)
                     ? OrderStatus.WAITING_FOR_PAYMENT : OrderStatus.PENDING;
-            PaymentStatus initialPaymentStatus = PaymentStatus.PENDING;
 
             Order order = Order.builder()
                     .user(currentUser)
                     .address(address)
                     .deliveryAddress(snapshotAddress)
                     .totalAmount(totalAmount)
-                    .originalTotalAmount(originalTotalAmount)
+                    .originalTotalAmount(orderTotalBeforeDiscount)
                     .discountAmount(discountAmount)
                     .shippingFee(shippingFee)
                     .status(initialStatus)
                     .orderStatus(initialStatus)
                     .paymentMethod(request.getPaymentMethod())
-                    .paymentStatus(initialPaymentStatus)
+                    .paymentStatus(PaymentStatus.PENDING)
                     .shippingRecipientName(request.getRecipientName())
                     .shippingPhone(request.getPhone())
                     .notes(request.getNotes())
                     .orderItems(new ArrayList<>())
                     .build();
 
-            order.applyCoupon(appliedCoupon);
+            if (appliedCoupon != null) {
+                order.applyCoupon(appliedCoupon);
+            }
 
             Order savedOrder = orderRepository.save(order);
 
+            // === 8. Lưu chi tiết đơn + trừ kho + tăng usedCount ===
             try {
                 List<OrderItem> orderItems = new ArrayList<>();
                 for (Map.Entry<String, Integer> entry : productSizeQuantityMap.entrySet()) {
                     String[] parts = entry.getKey().split("-");
                     Long productId = Long.parseLong(parts[0]);
                     String size = parts[1];
-                    Product product = productRepository.findById(productId)
-                            .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm: " + productId));
+
+                    Product product = productRepository.findById(productId).orElseThrow();
 
                     OrderItem item = OrderItem.builder()
                             .order(savedOrder)
@@ -230,37 +237,40 @@ public class OrderServiceImpl implements OrderService {
                 orderItemRepository.saveAll(orderItems);
                 savedOrder.setOrderItems(orderItems);
 
-                stockUpdates.forEach((productSizeKey, quantity) -> {
-                    String[] parts = productSizeKey.split("-");
-                    Long productId = Long.parseLong(parts[0]);
-                    String size = parts[1];
-                    ProductSize variant = productSizeRepository.findByProductIdAndSize(productId, size)
-                            .orElseThrow(() -> new NotFoundException("Không tìm thấy kích thước sản phẩm: " + productId + ", size: " + size));
-                    variant.setStockQuantity(variant.getStockQuantity() - quantity);
+                // Trừ kho
+                stockUpdates.forEach((key, qty) -> {
+                    String[] parts = key.split("-");
+                    ProductSize variant = productSizeRepository.findByProductIdAndSize(Long.parseLong(parts[0]), parts[1])
+                            .orElseThrow();
+                    variant.setStockQuantity(variant.getStockQuantity() - qty);
                     productSizeRepository.save(variant);
                 });
 
-                cartService.clearCart();
-
+                // Tăng lượt dùng coupon (chỉ khi có coupon hợp lệ)
                 if (appliedCoupon != null) {
                     appliedCoupon.setUsedCount(appliedCoupon.getUsedCount() + 1);
                     couponRepository.save(appliedCoupon);
-                    log.info("Incremented usedCount for coupon: {}", appliedCoupon.getId());
+                    log.info("Đã tăng usedCount cho coupon {} → {}", appliedCoupon.getCode(), appliedCoupon.getUsedCount());
                 }
-            } catch (Exception e) {
-                log.error("Failed to save items/stock for order {}: {}", savedOrder.getId(), e.getMessage());
-                throw new RuntimeException("Lỗi lưu chi tiết đơn hàng: " + e.getMessage(), e);
-            }
-            Hibernate.initialize(savedOrder.getOrderItems());
 
-            OrderResponse response = OrderResponse.fromEntity(orderRepository.findById(savedOrder.getId()).orElseThrow());
-            response.setOriginalTotalAmount(originalTotalAmount);
+                cartService.clearCart();
+
+            } catch (Exception e) {
+                log.error("Lỗi khi lưu chi tiết đơn hàng ID {}: {}", savedOrder.getId(), e.getMessage(), e);
+                throw new RuntimeException("Lỗi hệ thống khi xử lý đơn hàng", e);
+            }
+
+            // === 9. Response ===
+            Hibernate.initialize(savedOrder.getOrderItems());
+            OrderResponse response = OrderResponse.fromEntity(savedOrder);
+            response.setOriginalTotalAmount(orderTotalBeforeDiscount);
             response.setDiscountAmount(discountAmount);
             response.setCouponCode(appliedCouponCode);
 
+            // SEPay QR
             if (request.getPaymentMethod() == PaymentMethod.SEPAY) {
                 String qrUrl = String.format("https://qr.sepay.vn/img?bank=VietinBank&acc=109874753814&template=compact&amount=%d&des=SEVQR+TKPCCT+DH%d",
-                        savedOrder.getTotalAmount().longValue(), savedOrder.getId());
+                        totalAmount.longValue(), savedOrder.getId());
                 response.setQrCodeUrl(qrUrl);
                 response.setBankInfo(Map.of(
                         "bankName", "VietinBank",
@@ -270,16 +280,16 @@ public class OrderServiceImpl implements OrderService {
                 ));
             }
 
-            // 👈 THÊM MỚI: Gửi email xác nhận đơn hàng thành công (async, không block)
             sendOrderConfirmationEmailAsync(savedOrder);
+            log.info("Tạo đơn hàng thành công: ID = {}", savedOrder.getId());
 
             return response;
+
         } catch (Exception e) {
-            log.error("Create order failed: {}", e.getMessage(), e);
+            log.error("Tạo đơn hàng thất bại: {}", e.getMessage(), e);
             throw e;
         }
     }
-
     // 👈 THÊM MỚI: Helper method gửi email xác nhận đơn hàng (async)
     private void sendOrderConfirmationEmailAsync(Order order) {
         // Gọi async để không block transaction

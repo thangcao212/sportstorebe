@@ -27,6 +27,8 @@ public class CouponResponse {
     private LocalDateTime startDate;
     private LocalDateTime endDate;
     private String type;
+    private BigDecimal maxDiscountAmount;
+    private BigDecimal maxApplicableOrderValue;
 
     public static CouponResponse fromEntity(Coupon coupon) {
         return CouponResponse.builder()
@@ -40,6 +42,8 @@ public class CouponResponse {
                 .totalUsageLimit(coupon.getTotalUsageLimit())
                 .usedCount(coupon.getUsedCount())
                 .startDate(coupon.getStartDate())
+                .maxDiscountAmount(coupon.getMaxDiscountAmount())
+                .maxApplicableOrderValue(coupon.getMaxApplicableOrderValue())
                 .endDate(coupon.getEndDate())
                 .type(coupon.getType().name())
                 .build();

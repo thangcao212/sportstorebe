@@ -8,6 +8,7 @@ import com.sprotshop.sportstore.service.WishlistService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,17 +17,21 @@ import org.springframework.web.bind.annotation.*;
 public class WishlistController {
     private final WishlistService wishlistService;
 
+
+    @PreAuthorize("isAuthenticated()")
     @GetMapping("/current")
     public ResponseEntity<ApiResponse<WishlistResponse>> getCurrentWishlist() {
         return ResponseEntity.ok(ApiResponse.success("Danh sách yêu thích của bạn", wishlistService.getWishlistByCurrentUser()));
     }
 
+    @PreAuthorize("isAuthenticated()")
     @PostMapping("/add")
     public ResponseEntity<ApiResponse<WishlistResponse>> addToWishlist(@Valid @RequestBody WishlistItemRequest request) {
         WishlistResponse response = wishlistService.addToWishlist(request);
         return ResponseEntity.ok(ApiResponse.success("Thêm vào yêu thích thành công", response));
     }
 
+    @PreAuthorize("isAuthenticated()")
     @DeleteMapping("/remove/{productId}")
     public ResponseEntity<ApiResponse<WishlistResponse>> removeFromWishlist(@PathVariable Long productId) {
         WishlistResponse response = wishlistService.removeFromWishlist(productId);

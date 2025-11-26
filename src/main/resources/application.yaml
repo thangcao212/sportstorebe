@@ -60,7 +60,8 @@ spring:
       client:
         registration:
           google:
-                        scope:
+
+            scope:
               - openid
               - profile
               - email

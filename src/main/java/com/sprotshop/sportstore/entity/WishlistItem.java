@@ -25,7 +25,7 @@ public class WishlistItem {
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
 
-    private String size; // Kích cỡ nếu cần
+
 
     // equals() & hashCode() để tránh trùng
     @Override
@@ -34,12 +34,12 @@ public class WishlistItem {
         if (o == null || getClass() != o.getClass()) return false;
         WishlistItem that = (WishlistItem) o;
         return Objects.equals(wishlist, that.wishlist) &&
-                Objects.equals(product, that.product) &&
-                Objects.equals(size, that.size);
+                Objects.equals(product, that.product);
+
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(wishlist, product, size);
+        return Objects.hash(wishlist, product);
     }
 }

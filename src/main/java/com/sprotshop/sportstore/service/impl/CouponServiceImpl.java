@@ -60,6 +60,8 @@ public class CouponServiceImpl implements CouponService {
                     .maxUsagePerUser(request.getMaxUsagePerUser())
                     .totalUsageLimit(request.getTotalUsageLimit())
                     .startDate(request.getStartDate())
+                    .maxUsagePerUser(request.getMaxUsagePerUser())
+                    .maxApplicableOrderValue(request.getMaxApplicableOrderValue())
                     .endDate(request.getEndDate())
                     .type(request.getType())
                     .usedCount(0)
@@ -95,6 +97,8 @@ public class CouponServiceImpl implements CouponService {
             coupon.setMaxUsagePerUser(request.getMaxUsagePerUser());
             coupon.setTotalUsageLimit(request.getTotalUsageLimit());
             coupon.setStartDate(request.getStartDate());
+            coupon.setMaxDiscountAmount(request.getMaxDiscountAmount());
+            coupon.setMaxApplicableOrderValue(request.getMaxApplicableOrderValue());
             coupon.setEndDate(request.getEndDate());
             coupon.setType(request.getType());
 
@@ -152,49 +156,91 @@ public class CouponServiceImpl implements CouponService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public BigDecimal applyCoupon(ApplyCouponRequest request) {
         try {
             User currentUser = userService.getCurrentLoggedInUser();
             Long userId = currentUser.getId();
-            log.info("Applying coupon {} for userId: {}, orderTotal: {}", request.getCode(), userId, request.getOrderTotal());
+            String couponCode = request.getCode().trim().toUpperCase();
+
+            log.info("Applying coupon {} for userId: {}, orderTotal: {}",
+                    couponCode, userId, request.getOrderTotal());
 
             LocalDateTime now = LocalDateTime.now();
-            Coupon coupon = couponRepository.findValidByCode(request.getCode(), now)
-                    .orElseThrow(() -> new NotFoundException("Không tìm thấy coupon hợp lệ: " + request.getCode()));
 
-            // Check minOrderValue
+            // 1. Tìm coupon hợp lệ (đang trong thời gian + còn lượt)
+            Coupon coupon = couponRepository.findValidByCode(couponCode, now)
+                    .orElseThrow(() -> new NotFoundException("Không tìm thấy coupon hợp lệ: " + couponCode));
+
+            // 2. Kiểm tra giá trị đơn hàng tối thiểu
             if (request.getOrderTotal().compareTo(coupon.getMinOrderValue()) < 0) {
-                throw new InvalidCouponException("Đơn hàng không đủ giá trị tối thiểu: " + coupon.getMinOrderValue());
+                throw new InvalidCouponException(
+                        String.format("Đơn hàng phải từ %,dđ để sử dụng coupon này", coupon.getMinOrderValue().longValue()));
             }
 
-            // Check totalUsageLimit (if exists)
-            if (coupon.getTotalUsageLimit() != null && coupon.getUsedCount() >= coupon.getTotalUsageLimit()) {
-                throw new InvalidCouponException("Coupon đã hết lượt sử dụng");
+            // 3. Kiểm tra tổng lượt sử dụng (nếu có giới hạn)
+            if (coupon.getTotalUsageLimit() != null
+                    && coupon.getUsedCount() >= coupon.getTotalUsageLimit()) {
+                throw new InvalidCouponException("Coupon đã hết lượt sử dụng toàn hệ thống");
             }
 
-            // Check maxUsagePerUser: Count from user's completed orders with this coupon
-            long userUsedCount = orderRepository.countByUserIdAndCouponIdAndStatus(userId, coupon.getId(), OrderStatus.COMPLETED);
-            if (coupon.getMaxUsagePerUser() != null && userUsedCount >= coupon.getMaxUsagePerUser()) {
+            // 4. Kiểm tra lượt dùng của user này
+            long userUsedCount = orderRepository.countByUserIdAndCouponIdAndStatus(
+                    userId, coupon.getId(), OrderStatus.COMPLETED);
+
+            if (coupon.getMaxUsagePerUser() != null
+                    && userUsedCount >= coupon.getMaxUsagePerUser()) {
                 throw new InvalidCouponException("Bạn đã sử dụng hết lượt coupon này");
             }
 
-            // Calculate discount
+            // 5. TÍNH GIẢM GIÁ - PHIÊN BẢN HOÀN CHỈNH CÓ CAP
             BigDecimal discount;
+
             if (coupon.getType() == CouponType.FIXED) {
                 discount = coupon.getDiscountAmount();
-            } else {
+
+            } else { // PERCENTAGE
+                // Tính % trước
                 discount = request.getOrderTotal()
-                        .multiply(coupon.getDiscountPercentage()
-                                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+                        .multiply(coupon.getDiscountPercentage())
+                        .divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
+
+                // ÁP DỤNG CAP TỐI ĐA (nếu có)
+                if (coupon.getMaxDiscountAmount() != null
+                        && discount.compareTo(coupon.getMaxDiscountAmount()) > 0) {
+
+                    log.info("Coupon {}: Giảm {}% = {}đ → bị giới hạn CAP còn {}đ",
+                            coupon.getCode(),
+                            coupon.getDiscountPercentage(),
+                            discount,
+                            coupon.getMaxDiscountAmount());
+
+                    discount = coupon.getMaxDiscountAmount();
+                }
+
+                // (TÙY CHỌN) Giới hạn đơn hàng tối đa được áp %
+                if (coupon.getMaxApplicableOrderValue() != null
+                        && request.getOrderTotal().compareTo(coupon.getMaxApplicableOrderValue()) > 0) {
+
+                    throw new InvalidCouponException(
+                            String.format("Coupon chỉ áp dụng cho đơn hàng tối đa %,dđ",
+                                    coupon.getMaxApplicableOrderValue().longValue()));
+                }
             }
 
-            log.info("Coupon applied successfully: discount={}", discount);
+            // Làm tròn 2 chữ số cuối
+            discount = discount.setScale(2, RoundingMode.HALF_UP);
+
+            log.info("Coupon {} áp dụng thành công → Giảm: {}đ ({}%)",
+                    coupon.getCode(), discount,
+                    coupon.getType() == CouponType.PERCENTAGE
+                            ? coupon.getDiscountPercentage() : "FIXED");
+
             return discount;
+
         } catch (Exception e) {
             log.error("Apply coupon failed for code {}: {}", request.getCode(), e.getMessage(), e);
             throw e;
         }
     }
-
 }

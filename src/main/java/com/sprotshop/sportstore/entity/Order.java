@@ -36,7 +36,7 @@ public class Order {
     @Column(name = "shipping_phone", length = 20)
     private String shippingPhone;
 
-    @OneToOne(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "address_id", nullable = false)
     private Address address;
 
@@ -89,6 +89,7 @@ public class Order {
     @JoinColumn(name = "coupon_id")
     private Coupon coupon;
 
+   
     // Helper to calculate total (single coupon)
     public BigDecimal getTotalAmount() {
         BigDecimal itemsTotal = orderItems.stream()

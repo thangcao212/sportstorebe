@@ -15,5 +15,5 @@ public class WishlistItemRequest {
     @NotNull(message = "Product ID không được để trống")
     private Long productId;
 
-    private String size;  // Optional
+
 }
