@@ -238,13 +238,13 @@ public class OrderServiceImpl implements OrderService {
                 savedOrder.setOrderItems(orderItems);
 
                 // Trừ kho
-                stockUpdates.forEach((key, qty) -> {
-                    String[] parts = key.split("-");
-                    ProductSize variant = productSizeRepository.findByProductIdAndSize(Long.parseLong(parts[0]), parts[1])
-                            .orElseThrow();
-                    variant.setStockQuantity(variant.getStockQuantity() - qty);
-                    productSizeRepository.save(variant);
-                });
+//                stockUpdates.forEach((key, qty) -> {
+//                    String[] parts = key.split("-");
+//                    ProductSize variant = productSizeRepository.findByProductIdAndSize(Long.parseLong(parts[0]), parts[1])
+//                            .orElseThrow();
+//                    variant.setStockQuantity(variant.getStockQuantity() - qty);
+//                    productSizeRepository.save(variant);
+//                });
 
                 // Tăng lượt dùng coupon (chỉ khi có coupon hợp lệ)
                 if (appliedCoupon != null) {
@@ -526,6 +526,8 @@ public class OrderServiceImpl implements OrderService {
             order.setStatus(OrderStatus.CANCELED);
             order.setOrderStatus(OrderStatus.CANCELED);  // 👈 Sync
             order.setPaymentStatus(PaymentStatus.CANCELLED);
+
+
             Order savedOrder = orderRepository.save(order);
 
             // 👈 THÊM: Gửi email hủy đơn
@@ -798,84 +800,188 @@ public class OrderServiceImpl implements OrderService {
     public byte[] exportOrdersToExcel(OrderSearchRequest request) {
         log.info("Exporting orders with filters: {}", request);
         Specification<Order> spec = OrderSpecification.filterOrders(request);
-        // Fetch ALL matching orders (no pageable for export)
         List<Order> orders = orderRepository.findAll(spec);
         log.info("Found {} orders for export", orders.size());
 
-        try (Workbook workbook = new XSSFWorkbook()) {  // FIXED: Only Workbook in try-with-resources
-            Sheet sheet = workbook.createSheet("Orders");  // Create Sheet inside try block
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Đơn hàng");
 
-            // Create header row
-            Row headerRow = sheet.createRow(0);
+            // === HEADER TIẾNG VIỆT + ĐẸP ===
             String[] columns = {
-                    "Order ID", "User Email", "Order Date", "Status", "Total Amount", "Original Total Amount",
-                    "Discount Amount", "Coupon Code", "Payment Method", "Payment Status", "Province",
-                    "Ward", "Recipient Name", "Phone", "Delivery Address", "Tracking Number"  // 👈 UPDATED: Removed District column, shifted rest
+                    "Mã đơn hàng",
+                    "Email khách hàng",
+                    "Ngày đặt hàng",
+                    "Trạng thái đơn",
+                    "Thành tiền",
+                    "Tổng gốc",
+                    "Giảm giá",
+                    "Mã giảm giá",
+                    "Hình thức thanh toán",
+                    "Tình trạng thanh toán",
+                    "Tỉnh/Thành phố",
+                    "Phường/Xã",
+                    "Người nhận",
+                    "Số điện thoại",
+                    "Địa chỉ giao hàng",
+                    "Ghi chú"
             };
+
+            Row headerRow = sheet.createRow(0);
             CellStyle headerStyle = workbook.createCellStyle();
             Font headerFont = workbook.createFont();
             headerFont.setBold(true);
+            headerFont.setFontHeightInPoints((short) 13);
+            headerFont.setColor(IndexedColors.WHITE.getIndex());
             headerStyle.setFont(headerFont);
+            headerStyle.setFillForegroundColor(IndexedColors.DARK_BLUE.getIndex());
+            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            headerStyle.setAlignment(HorizontalAlignment.CENTER);
+            headerStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+            headerStyle.setBorderBottom(BorderStyle.THIN);
+            headerStyle.setBorderTop(BorderStyle.THIN);
+            headerStyle.setBorderLeft(BorderStyle.THIN);
+            headerStyle.setBorderRight(BorderStyle.THIN);
+
             for (int i = 0; i < columns.length; i++) {
                 Cell cell = headerRow.createCell(i);
                 cell.setCellValue(columns[i]);
                 cell.setCellStyle(headerStyle);
             }
 
-            // Data rows
-            int rowNum = 1;
+            // === STYLE CHO DỮ LIỆU ===
             CellStyle dateStyle = workbook.createCellStyle();
             dateStyle.setDataFormat(workbook.createDataFormat().getFormat("dd/MM/yyyy HH:mm"));
+
+            CellStyle moneyStyle = workbook.createCellStyle();
+            moneyStyle.setDataFormat(workbook.createDataFormat().getFormat("#,##0"));
+
+            CellStyle normalStyle = workbook.createCellStyle();
+            normalStyle.setWrapText(true);
+
+            int rowNum = 1;
             for (Order order : orders) {
-                Hibernate.initialize(order.getOrderItems()); // Ensure lazy load
+                Hibernate.initialize(order.getOrderItems());
                 Row row = sheet.createRow(rowNum++);
+                row.setHeightInPoints(25);
+
+                // 0. Mã đơn hàng
                 row.createCell(0).setCellValue(order.getId());
+
+                // 1. Email khách
                 row.createCell(1).setCellValue(order.getUser().getEmail());
+
+                // 2. Ngày đặt hàng
                 Cell dateCell = row.createCell(2);
                 dateCell.setCellValue(order.getCreatedAt());
                 dateCell.setCellStyle(dateStyle);
-                row.createCell(3).setCellValue(order.getStatus().name());
-                row.createCell(4).setCellValue(order.getTotalAmount().doubleValue());
-                row.createCell(5).setCellValue(order.getOriginalTotalAmount() != null ? order.getOriginalTotalAmount().doubleValue() : 0.0);
-                row.createCell(6).setCellValue(order.getDiscountAmount() != null ? order.getDiscountAmount().doubleValue() : 0.0);
 
-                // 👈 FIXED: Null check for coupon
+                // 3. Trạng thái đơn (tiếng Việt)
+                row.createCell(3).setCellValue(statusTiengViet(order.getStatus()));
+
+                // 4. Thành tiền
+                Cell totalCell = row.createCell(4);
+                totalCell.setCellValue(order.getTotalAmount().doubleValue());
+                totalCell.setCellStyle(moneyStyle);
+
+                // 5. Tổng gốc
+                Cell originalCell = row.createCell(5);
+                originalCell.setCellValue(order.getOriginalTotalAmount() != null ? order.getOriginalTotalAmount().doubleValue() : 0);
+                originalCell.setCellStyle(moneyStyle);
+
+                // 6. Giảm giá
+                Cell discountCell = row.createCell(6);
+                discountCell.setCellValue(order.getDiscountAmount() != null ? order.getDiscountAmount().doubleValue() : 0);
+                discountCell.setCellStyle(moneyStyle);
+
+                // 7. Mã giảm giá
                 row.createCell(7).setCellValue(order.getCoupon() != null ? order.getCoupon().getCode() : "");
-                row.createCell(8).setCellValue(order.getPaymentMethod().name());
-                row.createCell(9).setCellValue(order.getPaymentStatus().name());
-                // Province: Fetch from address
-                String provinceName = order.getAddress() != null && order.getAddress().getProvinceCode() != null
-                        ? provinceRepository.findById(order.getAddress().getProvinceCode()).map(Province::getName).orElse("Unknown")
-                        : "Unknown";
-                row.createCell(10).setCellValue(provinceName);
-                // 👈 NEW: Ward (no District)
-                String wardName = order.getAddress() != null && order.getAddress().getWardCode() != null
-                        ? wardRepository.findById(order.getAddress().getWardCode()).map(Ward::getName).orElse("Unknown")
-                        : "Unknown";
-                row.createCell(11).setCellValue(wardName);
-                // 👈 SHIFTED: Recipient Name (was 13 → 12, adjusted for no District)
-                row.createCell(12).setCellValue(order.getShippingRecipientName());
-                // 👈 SHIFTED: Phone (was 14 → 13)
-                row.createCell(13).setCellValue(order.getShippingPhone());
-                // 👈 SHIFTED: Delivery Address (was 15 → 14)
-                row.createCell(14).setCellValue(order.getDeliveryAddress());
-                // 👈 SHIFTED: Tracking Number (was 16 → 15)
-                row.createCell(15).setCellValue(order.getTrackingNumber() != null ? order.getTrackingNumber() : "");
 
-                // Auto-size columns (move outside loop for efficiency)
+                // 8. Hình thức thanh toán
+                row.createCell(8).setCellValue(paymentMethodTiengViet(order.getPaymentMethod()));
+
+                // 9. Tình trạng thanh toán
+                row.createCell(9).setCellValue(paymentStatusTiengViet(order.getPaymentStatus()));
+
+                // 10. Tỉnh/Thành phố
+                String provinceName = "Không xác định";
+                if (order.getAddress() != null && order.getAddress().getProvinceCode() != null) {
+                    provinceName = provinceRepository.findById(order.getAddress().getProvinceCode())
+                            .map(Province::getName)
+                            .orElse("Không xác định");
+                }
+                row.createCell(10).setCellValue(provinceName);
+
+                // 11. Phường/Xã
+                String wardName = "Không xác định";
+                if (order.getAddress() != null && order.getAddress().getWardCode() != null) {
+                    wardName = wardRepository.findById(order.getAddress().getWardCode())
+                            .map(Ward::getName)
+                            .orElse("Không xác định");
+                }
+                row.createCell(11).setCellValue(wardName);
+
+                // 12. Người nhận
+                row.createCell(12).setCellValue(order.getShippingRecipientName() != null ? order.getShippingRecipientName() : "");
+
+                // 13. Số điện thoại
+                row.createCell(13).setCellValue(order.getShippingPhone() != null ? order.getShippingPhone() : "");
+
+                // 14. Địa chỉ giao hàng
+                row.createCell(14).setCellValue(order.getDeliveryAddress() != null ? order.getDeliveryAddress() : "");
+
+                // 15. Ghi chú
+                row.createCell(15).setCellValue(order.getNotes() != null ? order.getNotes() : "");
             }
+
+            // Auto-size tất cả cột
             for (int i = 0; i < columns.length; i++) {
                 sheet.autoSizeColumn(i);
+                // Đảm bảo cột không quá hẹp
+                if (sheet.getColumnWidth(i) < 4000) {
+                    sheet.setColumnWidth(i, 5000);
+                }
             }
 
-            // Write to ByteArrayOutputStream
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
             return out.toByteArray();
+
         } catch (IOException e) {
             log.error("Error generating Excel for export: {}", e.getMessage(), e);
             throw new RuntimeException("Lỗi tạo file Excel: " + e.getMessage(), e);
         }
+    }
+
+    // === CÁC HÀM CHUYỂN TIẾNG VIỆT (đặt trong cùng class) ===
+    private String statusTiengViet(OrderStatus status) {
+        return switch (status) {
+            case PENDING            -> "Chờ xác nhận";
+            case PROCESSING         -> "Đang xử lý";
+            case SHIPPED            -> "Đã giao vận chuyển";
+            case DELIVERED          -> "Đã giao hàng";
+            case COMPLETED          -> "Hoàn thành";
+            case CANCELED           -> "Đã hủy";
+            case WAITING_FOR_PAYMENT-> "Chờ thanh toán";
+            default                 -> status.name();
+        };
+    }
+
+    private String paymentMethodTiengViet(PaymentMethod method) {
+        return switch (method) {
+            case COD   -> "Thanh toán khi nhận hàng (COD)";
+            case SEPAY -> "Chuyển khoản SEPay";
+            default    -> method.name();
+        };
+    }
+
+    private String paymentStatusTiengViet(PaymentStatus status) {
+        return switch (status) {
+            case PENDING   -> "Chưa thanh toán";
+            case PAID      -> "Đã thanh toán";
+            case CANCELLED -> "Đã hủy";
+            case REFUNDED  -> "Đã hoàn tiền";
+            default        -> status.name();
+        };
     }
 
     // Trong OrderServiceImpl

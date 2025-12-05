@@ -71,11 +71,7 @@ public class OrderStatsService {
         BigDecimal totalRevenue = orderRepository.sumTotalAmount();
         summary.put("totalRevenue", totalRevenue != null ? totalRevenue : BigDecimal.ZERO);
 
-        // XÓA 2 DÒNG CŨ NÀY ĐI (không cần nữa)
-        // BigDecimal totalCost = orderRepository.sumTotalCost();
-        // summary.put("totalCost", totalCost != null ? totalCost : BigDecimal.ZERO);
 
-        // DÙNG CÁI MỚI – LỢI NHUẬN CHUẨN KẾ TOÁN
         BigDecimal totalProfit = orderRepository.sumTotalProfit();
         summary.put("totalProfit", totalProfit != null ? totalProfit : BigDecimal.ZERO);
 

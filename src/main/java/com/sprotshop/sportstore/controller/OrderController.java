@@ -36,6 +36,7 @@ import org.springframework.ui.Model;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -462,68 +463,111 @@ public class OrderController {
     public ResponseEntity<byte[]> exportOrdersToExcel(
             @RequestParam(required = false) Double minTotalAmount,
             @RequestParam(required = false) Double maxTotalAmount,
-            @RequestParam(required = false) String status,  // e.g., "PENDING,PROCESSING"
-            @RequestParam(required = false) String paymentMethod,  // e.g., "COD,SEPAY"
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String paymentMethod,
             @RequestParam(required = false) Integer provinceCode,
-//            @RequestParam(required = false) Integer districtCode,
             @RequestParam(required = false) Integer wardCode,
             @RequestParam(required = false) String search,
-            @RequestParam(required = false) String emails,  // comma-separated
+            @RequestParam(required = false) String emails,
             @RequestParam(required = false) Long productId,
-            @RequestParam(required = false) String startDate,  // yyyy-MM-dd HH:mm
-            @RequestParam(required = false) String endDate) {  // yyyy-MM-dd HH:mm
+            @RequestParam(required = false) String startDate,   // ← chấp nhận: 2025-04-01 HOẶC 2025-04-01 10:30
+            @RequestParam(required = false) String endDate) {
 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
-        LocalDateTime start = null, end = null;
+        // ==================== FIX NGÀY THÁNG 100% =====================
+        LocalDateTime start = null;
+        LocalDateTime end = null;
 
-        if (startDate != null) start = LocalDateTime.parse(startDate, formatter);
-        if (endDate != null) end = LocalDateTime.parse(endDate, formatter);
+        // 2 format phổ biến nhất
+        DateTimeFormatter dateOnly = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        DateTimeFormatter dateTime = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-        // Build OrderSearchRequest from query params
-        OrderSearchRequest request = new OrderSearchRequest();
-        request.setMinTotalAmount(minTotalAmount);
-        request.setMaxTotalAmount(maxTotalAmount);
-        if (status != null && !status.isBlank()) {
+        if (StringUtils.hasText(startDate)) {
+            String s = startDate.trim();
+            try {
+                if (s.length() == 10) { // chỉ có ngày → 2025-04-01
+                    LocalDate ld = LocalDate.parse(s, dateOnly);
+                    start = ld.atStartOfDay(); // 00:00:00
+                } else { // có giờ phút
+                    LocalDateTime ldt = LocalDateTime.parse(s.length() > 16 ? s.substring(0, 16) : s, dateTime);
+                    start = ldt.withHour(0).withMinute(0).withSecond(0).withNano(0);
+                }
+            } catch (Exception e) {
+                log.warn("Cannot parse startDate: '{}', ignored", startDate);
+            }
+        }
+
+        if (StringUtils.hasText(endDate)) {
+            String s = endDate.trim();
+            try {
+                if (s.length() == 10) { // chỉ có ngày → 2025-04-05
+                    LocalDate ld = LocalDate.parse(s, dateOnly);
+                    end = ld.atTime(23, 59, 59, 999999999); // cuối ngày
+                } else {
+                    LocalDateTime ldt = LocalDateTime.parse(s.length() > 16 ? s.substring(0, 16) : s, dateTime);
+                    end = ldt.withHour(23).withMinute(59).withSecond(59).withNano(999999999);
+                }
+            } catch (Exception e) {
+                log.warn("Cannot parse endDate: '{}', ignored", endDate);
+            }
+        }
+        // ===========================================================
+
+        OrderSearchRequest request = OrderSearchRequest.builder()
+                .minTotalAmount(minTotalAmount)
+                .maxTotalAmount(maxTotalAmount)
+                .provinceCode(provinceCode)
+                .wardCode(wardCode)
+                .search(search)
+                .productId(productId)
+                .startDate(start)
+                .endDate(end)
+                .build();
+
+        // Status
+        if (StringUtils.hasText(status)) {
             request.setStatus(Arrays.stream(status.split(","))
+                    .map(String::trim)
+                    .filter(StringUtils::hasText)
                     .map(OrderStatus::valueOf)
-                    .collect(Collectors.toList()));
+                    .toList());
         }
-        if (paymentMethod != null && !paymentMethod.isBlank()) {
+
+        // Payment method
+        if (StringUtils.hasText(paymentMethod)) {
             request.setPaymentMethod(Arrays.stream(paymentMethod.split(","))
+                    .map(String::trim)
+                    .filter(StringUtils::hasText)
                     .map(PaymentMethod::valueOf)
-                    .collect(Collectors.toList()));
+                    .toList());
         }
-        request.setProvinceCode(provinceCode);
-//        request.setDistrictCode(districtCode);
-        request.setWardCode(wardCode);
-        request.setSearch(search);
-        if (emails != null && !emails.isBlank()) {
-            request.setEmails(Arrays.asList(emails.split(",")));
-        }
-        request.setProductId(productId);
-        if (startDate != null && !startDate.isBlank()) {
-            request.setStartDate(LocalDateTime.parse(startDate, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
-        }
-        if (endDate != null && !endDate.isBlank()) {
-            request.setEndDate(LocalDateTime.parse(endDate, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
+
+        // Emails
+        if (StringUtils.hasText(emails)) {
+            request.setEmails(Arrays.stream(emails.split(","))
+                    .map(String::trim)
+                    .filter(StringUtils::hasText)
+                    .toList());
         }
 
         try {
-            byte[] excelBytes = orderService.exportOrdersToExcel(request);
+            byte[] excel = orderService.exportOrdersToExcel(request);
+
+            String fileName = "orders_export_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".xlsx";
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-            headers.setContentDispositionFormData("attachment", "orders_export_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".xlsx");
-            headers.setContentLength(excelBytes.length);
+            headers.setContentDispositionFormData("attachment", fileName);
+            headers.setCacheControl("no-cache");
 
-            return new ResponseEntity<>(excelBytes, headers, HttpStatus.OK);
+            return new ResponseEntity<>(excel, headers, HttpStatus.OK);
+
         } catch (Exception e) {
-            log.error("Excel export failed: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(null);  // Or handle with ApiResponse if needed
+            log.error("Export Excel failed", e);
+            return ResponseEntity.internalServerError().build();
         }
     }
-}
+    }
+
 
 // Separate Controller for view rendering
 //@Controller

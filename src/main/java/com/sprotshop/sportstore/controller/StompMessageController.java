@@ -27,16 +27,7 @@ import java.util.Map;
 @Slf4j
 public class StompMessageController {
 
-//    private final MessagingService messagingService;
 
-//    @MessageMapping("/messages/{conversationId}") // Frontend send to /app/messages/{id}
-//    public void sendMessage(@DestinationVariable Long conversationId, @Payload MessageDto messageDto, SimpMessageHeaderAccessor headerAccessor) {
-//        // Extract sender từ JWT (cần config JWT cho WebSocket, hoặc dùng principal)
-//        // Giả sử bạn có User từ header hoặc session
-//        User sender = ((MessagingServiceImpl) messagingService).getCurrentUser(); // Reuse helper
-//        messagingService.addMessageToConversation(conversationId, sender, messageDto.getReceiverId(), messageDto.getContent());
-//        // Push tự động qua service
-//    }
 
     private final MessagingService messagingService;
     private final UserRepository userRepository;
