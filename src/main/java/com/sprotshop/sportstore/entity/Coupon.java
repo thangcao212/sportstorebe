@@ -1,6 +1,7 @@
 // Coupon.java (Entity - Update nullable columns)
 package com.sprotshop.sportstore.entity;
 
+import com.sprotshop.sportstore.Enum.CouponScope;
 import com.sprotshop.sportstore.Enum.CouponType;  // Assuming this is the enum
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -10,7 +11,9 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Entity
 @Table(name = "coupons")
@@ -71,5 +74,29 @@ public class Coupon {
     // ← MỚI: Chỉ áp % nếu đơn ≤ giá trị này (tùy chọn, rất an toàn)
     @Column(precision = 19, scale = 2)
     private BigDecimal maxApplicableOrderValue;
+
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "coupon_applicable_products",
+            joinColumns = @JoinColumn(name = "coupon_id"),
+            inverseJoinColumns = @JoinColumn(name = "product_id")
+    )
+    @Builder.Default
+    private Set<Product> applicableProducts = new HashSet<>();
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    @Builder.Default
+    private CouponScope scope = CouponScope.ALL_PRODUCTS;
+
+    // NEW: Nếu scope là CATEGORY hoặc BRAND
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "applicable_category_id")
+    private ProductCategory applicableCategory;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "applicable_brand_id")
+    private Brand applicableBrand;
 
 }

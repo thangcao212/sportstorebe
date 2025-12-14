@@ -69,15 +69,38 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     List<Object[]> sumRevenueByMonth(@Param("year") int year);
 
     @Query("""
-    SELECT p.name, SUM(od.quantity) as total
-    FROM OrderItem od 
-    JOIN od.product p 
-    JOIN od.order o 
+    SELECT p.id, p.name,
+           (SELECT pi.imageUrl FROM Image pi 
+            WHERE pi.product.id = p.id 
+            ORDER BY pi.id ASC LIMIT 1),
+           COALESCE(SUM(od.quantity), 0) AS total
+    FROM Product p
+    LEFT JOIN OrderItem od ON od.product.id = p.id
+    LEFT JOIN od.order o
     WHERE o.status = com.sprotshop.sportstore.Enum.OrderStatus.COMPLETED
+        OR o.id IS NULL
     GROUP BY p.id, p.name
     ORDER BY total DESC
 """)
     List<Object[]> findTopProducts(Pageable pageable);
+
+    @Query("""
+    SELECT p.id, p.name,
+           (SELECT pi.imageUrl FROM Image pi 
+            WHERE pi.product.id = p.id 
+            ORDER BY pi.id ASC LIMIT 1),
+           COALESCE(SUM(od.quantity), 0) AS total
+    FROM Product p
+    LEFT JOIN OrderItem od ON od.product.id = p.id
+    LEFT JOIN od.order o
+    WHERE o.status = com.sprotshop.sportstore.Enum.OrderStatus.COMPLETED
+        OR o.id IS NULL        
+    GROUP BY p.id, p.name
+    ORDER BY total ASC
+""")
+    List<Object[]> findWorstProducts(Pageable pageable);
+
+
 
     // Trong com.sprotshop.sportstore.repository.OrderRepository extends JpaRepository<Order, Long>
     Optional<Order> findByIdAndTotalAmountAndPaymentStatus(Long id, BigDecimal totalAmount, PaymentStatus paymentStatus);
@@ -117,10 +140,19 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
 
 
     // 👈 FIXED: findTopProductsByProfit - No subquery needed, direct calc
-    @Query("SELECT p.name, SUM((oi.price - p.costPrice) * oi.quantity) as profit " +
-            "FROM OrderItem oi JOIN oi.product p JOIN oi.order o " +
-            "WHERE o.status = 'COMPLETED' " +
-            "GROUP BY p.id, p.name ORDER BY profit DESC")
+    @Query("""
+SELECT p.id, p.name,
+       (SELECT pi.imageUrl FROM Image pi 
+        WHERE pi.product.id = p.id 
+        ORDER BY pi.id ASC LIMIT 1),
+       SUM((oi.price - p.costPrice) * oi.quantity) as profit
+FROM OrderItem oi 
+JOIN oi.product p 
+JOIN oi.order o
+WHERE o.status = com.sprotshop.sportstore.Enum.OrderStatus.COMPLETED
+GROUP BY p.id, p.name
+ORDER BY profit DESC
+""")
     List<Object[]> findTopProductsByProfit(Pageable pageable);
 
     // OrderRepository.java
@@ -225,4 +257,154 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
         WHERE o.status IN ('COMPLETED', 'DELIVERED')
         """)
     BigDecimal sumTotalProfit();
+
+
+    // Thêm vào OrderRepository.java
+
+    // 1. Top sản phẩm bán chạy nhất theo tuần
+    @Query(value = """
+    SELECT p.id, p.name, 
+           COALESCE((SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1), '/images/default-product.jpg') AS imageUrl,
+           p.price,
+           COALESCE(SUM(oi.quantity), 0) AS totalSold,
+           COALESCE(p.average_rating, 0.0) AS avgRating,
+           COALESCE(p.review_count, 0) AS reviewCnt,
+           COALESCE(b.name, '') AS brandName
+    FROM product p
+    LEFT JOIN brands b ON p.brand_id = b.id
+    LEFT JOIN order_item oi ON p.id = oi.product_id
+    LEFT JOIN orders o ON oi.order_id = o.id 
+        AND o.status IN ('DELIVERED', 'COMPLETED')
+        AND YEARWEEK(o.created_at, 1) = :yearWeek
+    GROUP BY p.id, p.name, p.price, p.average_rating, p.review_count, b.name
+    ORDER BY totalSold DESC
+    LIMIT :limit
+    """, nativeQuery = true)
+    List<Object[]> findBestSellingProductsByWeek(@Param("yearWeek") Integer yearWeek, @Param("limit") int limit);
+
+    // 2. Top sản phẩm bán ít nhất theo tuần
+    @Query(value = """
+    SELECT p.id, p.name, 
+           COALESCE((SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1), '/images/default-product.jpg') AS imageUrl,
+           p.price,
+           COALESCE(SUM(oi.quantity), 0) AS totalSold,
+           COALESCE(p.average_rating, 0.0) AS avgRating,
+           COALESCE(p.review_count, 0) AS reviewCnt,
+           COALESCE(b.name, '') AS brandName
+    FROM product p
+    LEFT JOIN brands b ON p.brand_id = b.id
+    LEFT JOIN order_item oi ON p.id = oi.product_id
+    LEFT JOIN orders o ON oi.order_id = o.id 
+        AND o.status IN ('DELIVERED', 'COMPLETED')
+        AND YEARWEEK(o.created_at, 1) = :yearWeek
+    GROUP BY p.id, p.name, p.price, p.average_rating, p.review_count, b.name
+    ORDER BY totalSold ASC
+    LIMIT :limit
+    """, nativeQuery = true)
+    List<Object[]> findWorstSellingProductsByWeek(@Param("yearWeek") Integer yearWeek, @Param("limit") int limit);
+
+    // 3. Top sản phẩm bán chạy nhất theo tháng
+    @Query(value = """
+    SELECT p.id, p.name, 
+           COALESCE((SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1), '/images/default-product.jpg') AS imageUrl,
+           p.price,
+           COALESCE(SUM(oi.quantity), 0) AS totalSold,
+           COALESCE(p.average_rating, 0.0) AS avgRating,
+           COALESCE(p.review_count, 0) AS reviewCnt,
+           COALESCE(b.name, '') AS brandName
+    FROM product p
+    LEFT JOIN brands b ON p.brand_id = b.id
+    LEFT JOIN order_item oi ON p.id = oi.product_id
+    LEFT JOIN orders o ON oi.order_id = o.id 
+        AND o.status IN ('DELIVERED', 'COMPLETED')
+        AND YEAR(o.created_at) = :year
+        AND MONTH(o.created_at) = :month
+    GROUP BY p.id, p.name, p.price, p.average_rating, p.review_count, b.name
+    ORDER BY totalSold DESC
+    LIMIT :limit
+    """, nativeQuery = true)
+    List<Object[]> findBestSellingProductsByMonth(@Param("year") Integer year, @Param("month") Integer month, @Param("limit") int limit);
+
+    // 4. Top sản phẩm bán ít nhất theo tháng
+    @Query(value = """
+    SELECT p.id, p.name, 
+           COALESCE((SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1), '/images/default-product.jpg') AS imageUrl,
+           p.price,
+           COALESCE(SUM(oi.quantity), 0) AS totalSold,
+           COALESCE(p.average_rating, 0.0) AS avgRating,
+           COALESCE(p.review_count, 0) AS reviewCnt,
+           COALESCE(b.name, '') AS brandName
+    FROM product p
+    LEFT JOIN brands b ON p.brand_id = b.id
+    LEFT JOIN order_item oi ON p.id = oi.product_id
+    LEFT JOIN orders o ON oi.order_id = o.id 
+        AND o.status IN ('DELIVERED', 'COMPLETED')
+        AND YEAR(o.created_at) = :year
+        AND MONTH(o.created_at) = :month
+    GROUP BY p.id, p.name, p.price, p.average_rating, p.review_count, b.name
+    ORDER BY totalSold ASC
+    LIMIT :limit
+    """, nativeQuery = true)
+    List<Object[]> findWorstSellingProductsByMonth(@Param("year") Integer year, @Param("month") Integer month, @Param("limit") int limit);
+
+    // 5. Top sản phẩm bán chạy nhất theo năm
+    @Query(value = """
+    SELECT p.id, p.name, 
+           COALESCE((SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1), '/images/default-product.jpg') AS imageUrl,
+           p.price,
+           COALESCE(SUM(oi.quantity), 0) AS totalSold,
+           COALESCE(p.average_rating, 0.0) AS avgRating,
+           COALESCE(p.review_count, 0) AS reviewCnt,
+           COALESCE(b.name, '') AS brandName
+    FROM product p
+    LEFT JOIN brands b ON p.brand_id = b.id
+    LEFT JOIN order_item oi ON p.id = oi.product_id
+    LEFT JOIN orders o ON oi.order_id = o.id 
+        AND o.status IN ('DELIVERED', 'COMPLETED')
+        AND YEAR(o.created_at) = :year
+    GROUP BY p.id, p.name, p.price, p.average_rating, p.review_count, b.name
+    ORDER BY totalSold DESC
+    LIMIT :limit
+    """, nativeQuery = true)
+    List<Object[]> findBestSellingProductsByYear(@Param("year") Integer year, @Param("limit") int limit);
+
+    // 6. Top sản phẩm bán ít nhất theo năm
+    @Query(value = """
+    SELECT p.id, p.name, 
+           COALESCE((SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1), '/images/default-product.jpg') AS imageUrl,
+           p.price,
+           COALESCE(SUM(oi.quantity), 0) AS totalSold,
+           COALESCE(p.average_rating, 0.0) AS avgRating,
+           COALESCE(p.review_count, 0) AS reviewCnt,
+           COALESCE(b.name, '') AS brandName
+    FROM product p
+    LEFT JOIN brands b ON p.brand_id = b.id
+    LEFT JOIN order_item oi ON p.id = oi.product_id
+    LEFT JOIN orders o ON oi.order_id = o.id 
+        AND o.status IN ('DELIVERED', 'COMPLETED')
+        AND YEAR(o.created_at) = :year
+    GROUP BY p.id, p.name, p.price, p.average_rating, p.review_count, b.name
+    ORDER BY totalSold ASC
+    LIMIT :limit
+    """, nativeQuery = true)
+    List<Object[]> findWorstSellingProductsByYear(@Param("year") Integer year, @Param("limit") int limit);
+
+    // Helper: Lấy năm-tuần hiện tại
+    @Query(value = "SELECT YEARWEEK(CURDATE(), 1)", nativeQuery = true)
+    Integer getCurrentYearWeek();
+
+    // Helper: Lấy năm hiện tại
+    @Query(value = "SELECT YEAR(CURDATE())", nativeQuery = true)
+    Integer getCurrentYear();
+
+    // Helper: Lấy tháng hiện tại
+    @Query(value = "SELECT MONTH(CURDATE())", nativeQuery = true)
+    Integer getCurrentMonth();
+
+    List<Order> findByStatusAndPaymentMethodAndPaymentStatusAndCreatedAtBefore(
+            OrderStatus status,
+            PaymentMethod paymentMethod,
+            PaymentStatus paymentStatus,
+            LocalDateTime createdAtBefore
+    );
 }

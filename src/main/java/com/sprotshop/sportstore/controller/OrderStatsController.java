@@ -131,6 +131,17 @@ public class OrderStatsController {
                 .build();
     }
 
+    @GetMapping("/worst-products")
+    public ApiResponse<List<Map<String, Object>>> getWorstProducts(
+            @RequestParam(defaultValue = "5") int limit
+    ) {
+        return ApiResponse.<List<Map<String, Object>>>builder()
+                .status(200)
+                .message("Top sản phẩm bán kém nhất")
+                .data(orderStatsService.getWorstProducts(limit))
+                .build();
+    }
+
     // 👈 NEW: Top Products by Profit
     @GetMapping("/top-products-by-profit")
     public ApiResponse<List<Map<String, Object>>> getTopProductsByProfit(

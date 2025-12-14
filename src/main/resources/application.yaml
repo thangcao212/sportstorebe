@@ -59,8 +59,8 @@ spring:
     oauth2:
       client:
         registration:
-            scope:
-              - openid
+          google:
+
               - profile
               - email
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"

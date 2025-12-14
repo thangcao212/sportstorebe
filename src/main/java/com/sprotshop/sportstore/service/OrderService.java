@@ -22,7 +22,7 @@ public interface OrderService {
 
     OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus);
 
-    OrderResponse addTrackingNumber(Long orderId, String trackingNumber);
+//    OrderResponse addTrackingNumber(Long orderId, String trackingNumber);
 
     OrderResponse getOrderByIdForAdmin(Long orderId);
 
@@ -33,9 +33,9 @@ public interface OrderService {
 
     void handleSepayWebhook(SepayWebhookRequest webhook);
 
-    OrderResponse confirmCodPayment(Long orderId);
-
-    OrderResponse confirmProcessing(Long orderId);
+//    OrderResponse confirmCodPayment(Long orderId);
+//
+//    OrderResponse confirmProcessing(Long orderId);
 
     List<OrderResponse> getOrdersByUser(Long userId);
 

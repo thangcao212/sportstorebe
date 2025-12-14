@@ -199,33 +199,6 @@ public class OrderController {
         }
     }
 
-    @PutMapping("/admin/{orderId}/tracking")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<OrderResponse>> addTrackingNumber(
-            @PathVariable Long orderId, @RequestBody Map<String, String> request) {
-        String trackingNumber = request.get("trackingNumber");
-        if (!StringUtils.hasText(trackingNumber)) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.<OrderResponse>builder()
-                            .message("Tracking number is required")
-                            .status(HttpStatus.BAD_REQUEST.value())
-                            .build());
-        }
-        try {
-            OrderResponse order = orderService.addTrackingNumber(orderId, trackingNumber);
-            return ResponseEntity.ok(ApiResponse.<OrderResponse>builder()
-                    .message("Tracking number added")
-                    .data(order)
-                    .status(HttpStatus.OK.value())
-                    .build());
-        } catch (NotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.<OrderResponse>builder()
-                            .message(e.getMessage())
-                            .status(HttpStatus.NOT_FOUND.value())
-                            .build());
-        }
-    }
 
     @PostMapping("/search")
     public ResponseEntity<ApiResponse<PageResponse<OrderResponse>>> searchOrders(
@@ -276,7 +249,7 @@ public class OrderController {
             checkoutData.put("paymentMethod", order.getPaymentMethod().name());
             checkoutData.put("orderStatus", order.getStatus().name());
 
-            if (order.getPaymentMethod() == PaymentMethod.SEPAY && order.getStatus() == OrderStatus.WAITING_FOR_PAYMENT) {
+            if (order.getPaymentMethod() == PaymentMethod.SEPAY && order.getStatus() == OrderStatus.PENDING) {
                 // Tương tự, update QR des
                 String qrUrl = String.format("https://qr.sepay.vn/img?bank=VietinBank&acc=109874753814&template=compact&amount=%d&des=SEVQR+TKPCCT+DH%d",
                         order.getTotalAmount().longValue(), order.getId());
@@ -349,58 +322,7 @@ public class OrderController {
     }
 
 
-    // COD: Confirm processing (PENDING -> PROCESSING)
-    @PutMapping("/admin/{orderId}/confirm-processing")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<OrderResponse>> confirmProcessing(@PathVariable Long orderId) {
-        try {
-            OrderResponse order = orderService.confirmProcessing(orderId);
-            return ResponseEntity.ok(ApiResponse.<OrderResponse>builder()
-                    .message("Xác nhận xử lý đơn hàng COD thành công")
-                    .data(order)
-                    .status(HttpStatus.OK.value())
-                    .build());
-        } catch (InvalidOrderTransitionException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(ApiResponse.<OrderResponse>builder()
-                            .message("Lỗi flow: " + e.getMessage())
-                            .status(HttpStatus.CONFLICT.value())
-                            .build());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.<OrderResponse>builder()
-                            .message("Không thể xác nhận xử lý đơn")
-                            .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                            .build());
-        }
-    }
 
-    // Existing/Enhanced: confirmCodPayment
-    // COD: Confirm payment (DELIVERED -> PAID + COMPLETED)
-    @PutMapping("/admin/{orderId}/confirm-cod-payment")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<OrderResponse>> confirmCodPayment(@PathVariable Long orderId) {
-        try {
-            OrderResponse order = orderService.confirmCodPayment(orderId);
-            return ResponseEntity.ok(ApiResponse.<OrderResponse>builder()
-                    .message("Xác nhận thanh toán COD thành công")
-                    .data(order)
-                    .status(HttpStatus.OK.value())
-                    .build());
-        } catch (InvalidOrderTransitionException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(ApiResponse.<OrderResponse>builder()
-                            .message("Lỗi flow: " + e.getMessage())
-                            .status(HttpStatus.CONFLICT.value())
-                            .build());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.<OrderResponse>builder()
-                            .message("Không thể xác nhận thanh toán COD")
-                            .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                            .build());
-        }
-    }
 
     // GET /api/orders/user/{userId}
     @GetMapping("/user/{userId}")
@@ -423,33 +345,8 @@ public class OrderController {
                 .build());
     }
 
-    @GetMapping("/admin/{orderId}/possible-statuses")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<List<OrderStatus>>> getPossibleStatuses(@PathVariable Long orderId) {
-        try {
-            List<OrderStatus> possibles = orderService.getPossibleNextStatuses(orderId);
-            return ResponseEntity.ok(ApiResponse.<List<OrderStatus>>builder()
-                    .message("Possible statuses fetched")
-                    .data(possibles)
-                    .status(HttpStatus.OK.value())
-                    .build());
-        } catch (NotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.<List<OrderStatus>>builder()
-                            .message(e.getMessage())
-                            .status(HttpStatus.NOT_FOUND.value())
-                            .build());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.<List<OrderStatus>>builder()
-                            .message("Error fetching possible statuses")
-                            .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                            .build());
-        }
-    }
 
-    // OrderController.java (hoặc tạo riêng HomeController cũng được)
-    // OrderController.java hoặc ProductController.java
+
     @GetMapping("/best-sellers")
     public ResponseEntity<ApiResponse<List<ProductCardDto>>> getBestSellers(
             @RequestParam(defaultValue = "12") Integer limit) {

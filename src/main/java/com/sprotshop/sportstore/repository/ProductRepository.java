@@ -8,6 +8,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -39,4 +41,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Override
     @EntityGraph(attributePaths = {"productCategory", "images", "productSizes"}) // Add productSizes
     Page<Product> findAll(Specification<Product> spec, Pageable pageable);
+
+    @Query("SELECT p FROM Product p WHERE p.id IN :productIds")
+    List<Product> findAllByIdIn(@Param("productIds") List<Long> productIds);
 }

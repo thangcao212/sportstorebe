@@ -124,24 +124,34 @@ public class OrderStatsService {
 
 
     public List<Map<String, Object>> getTopProducts(int limit) {
-        List<Object[]> results = orderRepository.findTopProducts(PageRequest.of(0, limit));
-        return results.stream().map(row -> {
-            Map<String, Object> map = new HashMap<>();
-            map.put("productName", row[0]);
-            map.put("totalSold", ((Number) row[1]).longValue());
-            return map;
-        }).collect(Collectors.toList());
+        return orderRepository.findTopProducts(PageRequest.of(0, limit))
+                .stream().map(row -> Map.of(
+                        "productId", row[0],
+                        "productName", row[1],
+                        "image", row[2],
+                        "totalSold", ((Number) row[3]).longValue()
+                )).toList();
     }
 
+    public List<Map<String, Object>> getWorstProducts(int limit) {
+        return orderRepository.findWorstProducts(PageRequest.of(0, limit))
+                .stream().map(row -> Map.of(
+                        "productId", row[0],
+                        "productName", row[1],
+                        "image", row[2],
+                        "totalSold", ((Number) row[3]).longValue()
+                )).toList();
+    }
+
+
     public List<Map<String, Object>> getTopProductsByProfit(int limit) {
-        List<Object[]> results = orderRepository.findTopProductsByProfit(PageRequest.of(0, limit));
-        return results.stream().map(row -> {
-            Map<String, Object> map = new HashMap<>();
-            map.put("productName", row[0]);
-            BigDecimal profit = (BigDecimal) row[1];
-            map.put("totalProfit", profit != null ? profit : BigDecimal.ZERO);
-            return map;
-        }).collect(Collectors.toList());
+        return orderRepository.findTopProductsByProfit(PageRequest.of(0, limit))
+                .stream().map(row -> Map.of(
+                        "productId", row[0],
+                        "productName", row[1],
+                        "image", row[2],
+                        "totalProfit", row[3] != null ? row[3] : BigDecimal.ZERO
+                )).toList();
     }
 
 
