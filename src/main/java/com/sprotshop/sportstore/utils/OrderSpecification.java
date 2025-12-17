@@ -19,6 +19,11 @@ public class OrderSpecification {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
+            // 👈 THÊM ĐIỀU KIỆN TÌM THEO ORDER ID
+            if (request.getOrderId() != null) {
+                predicates.add(cb.equal(root.get("id"), request.getOrderId()));
+            }
+
             // Validate tổng tiền
             if (request.getMinTotalAmount() != null && request.getMaxTotalAmount() != null) {
                 if (request.getMaxTotalAmount().compareTo(request.getMinTotalAmount()) < 0) {

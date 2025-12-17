@@ -407,4 +407,90 @@ ORDER BY profit DESC
             PaymentStatus paymentStatus,
             LocalDateTime createdAtBefore
     );
-}
+
+    @Query("""
+    SELECT p.id, p.name,
+           (SELECT pi.imageUrl FROM Image pi 
+            WHERE pi.product.id = p.id 
+            ORDER BY pi.id ASC LIMIT 1),
+           COALESCE(SUM(od.quantity), 0) AS total
+    FROM Product p
+    LEFT JOIN OrderItem od ON od.product.id = p.id
+    LEFT JOIN od.order o ON o.status IN ('COMPLETED', 'DELIVERED')
+    GROUP BY p.id, p.name
+    ORDER BY total DESC
+    """)
+    List<Object[]> findTopSellingProductsAllTime(Pageable pageable);
+
+    @Query(value = """
+    SELECT p.id, p.name,
+           COALESCE((SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1), '/images/default-product.jpg') AS imageUrl,
+           COALESCE(SUM(oi.quantity), 0) AS totalSold
+    FROM product p
+    LEFT JOIN order_item oi ON p.id = oi.product_id
+    LEFT JOIN orders o ON oi.order_id = o.id
+    WHERE o.status IN ('DELIVERED', 'COMPLETED')
+      AND YEAR(o.created_at) = :year
+    GROUP BY p.id, p.name
+    ORDER BY totalSold DESC
+    """, nativeQuery = true)
+    List<Object[]> findTopSellingProductsByYear(@Param("year") int year, Pageable pageable);
+
+    // Top bán chạy - Theo tháng + năm
+    @Query(value = """
+    SELECT p.id, p.name,
+           COALESCE((SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1), '/images/default-product.jpg') AS imageUrl,
+           COALESCE(SUM(oi.quantity), 0) AS totalSold
+    FROM product p
+    LEFT JOIN order_item oi ON p.id = oi.product_id
+    LEFT JOIN orders o ON oi.order_id = o.id
+    WHERE o.status IN ('DELIVERED', 'COMPLETED')
+      AND YEAR(o.created_at) = :year
+      AND MONTH(o.created_at) = :month
+    GROUP BY p.id, p.name
+    ORDER BY totalSold DESC
+    """, nativeQuery = true)
+    List<Object[]> findTopSellingProductsByMonth(@Param("year") int year, @Param("month") int month, Pageable pageable);
+    @Query("""
+    SELECT p.id, p.name,
+           (SELECT pi.imageUrl FROM Image pi 
+            WHERE pi.product.id = p.id 
+            ORDER BY pi.id ASC LIMIT 1),
+           COALESCE(SUM(od.quantity), 0) AS total
+    FROM Product p
+    LEFT JOIN OrderItem od ON od.product.id = p.id
+    LEFT JOIN od.order o ON o.status IN ('COMPLETED', 'DELIVERED')
+    GROUP BY p.id, p.name
+    ORDER BY total ASC
+    """)
+    List<Object[]> findWorstSellingProductsAllTime(Pageable pageable);
+
+    @Query(value = """
+    SELECT p.id, p.name,
+           COALESCE((SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1), '/images/default-product.jpg') AS imageUrl,
+           COALESCE(SUM(oi.quantity), 0) AS totalSold
+    FROM product p
+    LEFT JOIN order_item oi ON p.id = oi.product_id
+    LEFT JOIN orders o ON oi.order_id = o.id 
+        AND o.status IN ('DELIVERED', 'COMPLETED')
+        AND YEAR(o.created_at) = :year
+    GROUP BY p.id, p.name
+    ORDER BY totalSold ASC, p.id ASC
+    """, nativeQuery = true)
+    List<Object[]> findWorstSellingProductsByYear(@Param("year") int year, Pageable pageable);
+
+    @Query(value = """
+    SELECT p.id, p.name,
+           COALESCE((SELECT i.image_url FROM image i WHERE i.product_id = p.id ORDER BY i.id ASC LIMIT 1), '/images/default-product.jpg') AS imageUrl,
+           COALESCE(SUM(oi.quantity), 0) AS totalSold
+    FROM product p
+    LEFT JOIN order_item oi ON p.id = oi.product_id
+    LEFT JOIN orders o ON oi.order_id = o.id 
+        AND o.status IN ('DELIVERED', 'COMPLETED')
+        AND YEAR(o.created_at) = :year
+        AND MONTH(o.created_at) = :month
+    GROUP BY p.id, p.name
+    ORDER BY totalSold ASC, p.id ASC
+    """, nativeQuery = true)
+    List<Object[]> findWorstSellingProductsByMonth(@Param("year") int year, @Param("month") int month, Pageable pageable);
+    }

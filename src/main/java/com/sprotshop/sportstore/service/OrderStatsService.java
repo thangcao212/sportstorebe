@@ -4,6 +4,7 @@ import com.sprotshop.sportstore.Enum.OrderStatus;
 import com.sprotshop.sportstore.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -123,26 +124,45 @@ public class OrderStatsService {
     }
 
 
-    public List<Map<String, Object>> getTopProducts(int limit) {
-        return orderRepository.findTopProducts(PageRequest.of(0, limit))
-                .stream().map(row -> Map.of(
-                        "productId", row[0],
-                        "productName", row[1],
-                        "image", row[2],
-                        "totalSold", ((Number) row[3]).longValue()
-                )).toList();
+    public List<Map<String, Object>> getTopProducts(int limit, Integer year, Integer month) {
+        List<Object[]> raw;
+        Pageable pageable = PageRequest.of(0, limit);
+
+        if (year != null && month != null) {
+            raw = orderRepository.findTopSellingProductsByMonth(year, month, pageable);
+        } else if (year != null) {
+            raw = orderRepository.findTopSellingProductsByYear(year, pageable);
+        } else {
+            raw = orderRepository.findTopSellingProductsAllTime(pageable);
+        }
+
+        return raw.stream().map(row -> Map.of(
+                "productId", row[0],
+                "productName", row[1],
+                "image", row[2] != null ? row[2] : "/images/default-product.jpg",
+                "totalSold", ((Number) row[3]).longValue()
+        )).toList();
     }
 
-    public List<Map<String, Object>> getWorstProducts(int limit) {
-        return orderRepository.findWorstProducts(PageRequest.of(0, limit))
-                .stream().map(row -> Map.of(
-                        "productId", row[0],
-                        "productName", row[1],
-                        "image", row[2],
-                        "totalSold", ((Number) row[3]).longValue()
-                )).toList();
-    }
+    public List<Map<String, Object>> getWorstProducts(int limit, Integer year, Integer month) {
+        List<Object[]> raw;
+        Pageable pageable = PageRequest.of(0, limit);
 
+        if (year != null && month != null) {
+            raw = orderRepository.findWorstSellingProductsByMonth(year, month, pageable);
+        } else if (year != null) {
+            raw = orderRepository.findWorstSellingProductsByYear(year, pageable);
+        } else {
+            raw = orderRepository.findWorstSellingProductsAllTime(pageable);
+        }
+
+        return raw.stream().map(row -> Map.of(
+                "productId", row[0],
+                "productName", row[1],
+                "image", row[2] != null ? row[2] : "/images/default-product.jpg",
+                "totalSold", ((Number) row[3]).longValue()
+        )).toList();
+    }
 
     public List<Map<String, Object>> getTopProductsByProfit(int limit) {
         return orderRepository.findTopProductsByProfit(PageRequest.of(0, limit))

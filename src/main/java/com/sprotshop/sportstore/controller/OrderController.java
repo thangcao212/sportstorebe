@@ -214,7 +214,6 @@ public class OrderController {
                 .status(HttpStatus.OK.value())
                 .build());
     }
-
     @PostMapping("/sync")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<String>> syncData() {
@@ -358,6 +357,7 @@ public class OrderController {
     @GetMapping("/admin/export/excel")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportOrdersToExcel(
+            @RequestParam(required = false) Long orderId, // 👈 THÊM THAM SỐ NÀY
             @RequestParam(required = false) Double minTotalAmount,
             @RequestParam(required = false) Double maxTotalAmount,
             @RequestParam(required = false) String status,
@@ -367,24 +367,23 @@ public class OrderController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String emails,
             @RequestParam(required = false) Long productId,
-            @RequestParam(required = false) String startDate,   // ← chấp nhận: 2025-04-01 HOẶC 2025-04-01 10:30
+            @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
 
-        // ==================== FIX NGÀY THÁNG 100% =====================
+        // ==================== XỬ LÝ NGÀY THÁNG =====================
         LocalDateTime start = null;
         LocalDateTime end = null;
 
-        // 2 format phổ biến nhất
         DateTimeFormatter dateOnly = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         DateTimeFormatter dateTime = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
         if (StringUtils.hasText(startDate)) {
             String s = startDate.trim();
             try {
-                if (s.length() == 10) { // chỉ có ngày → 2025-04-01
+                if (s.length() == 10) {
                     LocalDate ld = LocalDate.parse(s, dateOnly);
-                    start = ld.atStartOfDay(); // 00:00:00
-                } else { // có giờ phút
+                    start = ld.atStartOfDay();
+                } else {
                     LocalDateTime ldt = LocalDateTime.parse(s.length() > 16 ? s.substring(0, 16) : s, dateTime);
                     start = ldt.withHour(0).withMinute(0).withSecond(0).withNano(0);
                 }
@@ -396,9 +395,9 @@ public class OrderController {
         if (StringUtils.hasText(endDate)) {
             String s = endDate.trim();
             try {
-                if (s.length() == 10) { // chỉ có ngày → 2025-04-05
+                if (s.length() == 10) {
                     LocalDate ld = LocalDate.parse(s, dateOnly);
-                    end = ld.atTime(23, 59, 59, 999999999); // cuối ngày
+                    end = ld.atTime(23, 59, 59, 999999999);
                 } else {
                     LocalDateTime ldt = LocalDateTime.parse(s.length() > 16 ? s.substring(0, 16) : s, dateTime);
                     end = ldt.withHour(23).withMinute(59).withSecond(59).withNano(999999999);
@@ -410,6 +409,7 @@ public class OrderController {
         // ===========================================================
 
         OrderSearchRequest request = OrderSearchRequest.builder()
+                .orderId(orderId) // 👈 THÊM VÀO ĐÂY
                 .minTotalAmount(minTotalAmount)
                 .maxTotalAmount(maxTotalAmount)
                 .provinceCode(provinceCode)

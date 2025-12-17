@@ -146,6 +146,7 @@ public class ProductController {
     public ResponseEntity<ApiResponse<PageResponse<ProductResponse>>> searchProducts(
             @RequestParam(required = false) String searchValue,
             @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long productId,
             @RequestParam(required = false) Double minPrice,
             @RequestParam(required = false) Double maxPrice,
             @RequestParam(required = false) Double minCostPrice,
@@ -161,6 +162,7 @@ public class ProductController {
                 .searchValue(searchValue)
                 .categoryId(categoryId)
                 .minPrice(minPrice)
+                .productId(productId)
                 .maxPrice(maxPrice)
                 .minCostPrice(minCostPrice)
                 .maxCostPrice(maxCostPrice)

@@ -10,7 +10,17 @@ import java.util.List;
 
 public class ProductSpecification {
 
+    // 👈 THÊM METHOD NÀY
+    public static Specification<Product> byProductId(Long productId) {
+        return (root, query, cb) -> {
+            if (productId == null) {
+                return cb.conjunction();
+            }
+            return cb.equal(root.get("id"), productId);
+        };
+    }
 
+    // Các methods cũ giữ nguyên...
     public static Specification<Product> bySearchValue(String searchValue) {
         return (root, query, cb) -> {
             if (searchValue == null || searchValue.trim().isEmpty()) {
@@ -26,7 +36,6 @@ public class ProductSpecification {
             return cb.or(predicates.toArray(new Predicate[0]));
         };
     }
-
 
     public static Specification<Product> byCategoryId(Long categoryId, List<Long> descendantIds) {
         return (root, query, cb) -> {
@@ -50,7 +59,6 @@ public class ProductSpecification {
         };
     }
 
-
     public static Specification<Product> byPriceRange(Double minPrice, Double maxPrice) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -63,7 +71,6 @@ public class ProductSpecification {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
     }
-
 
     public static Specification<Product> byCostPriceRange(Double minCostPrice, Double maxCostPrice) {
         return (root, query, cb) -> {
@@ -78,7 +85,6 @@ public class ProductSpecification {
         };
     }
 
-
     public static Specification<Product> byStockQuantity(Integer minStock, Integer maxStock) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -92,7 +98,6 @@ public class ProductSpecification {
         };
     }
 
-
     public static Specification<Product> byBrandId(Long brandId) {
         return (root, query, cb) -> {
             if (brandId == null) {
@@ -102,19 +107,15 @@ public class ProductSpecification {
         };
     }
 
-
     public static Specification<Product> fetchBrand() {
         return (root, query, cb) -> {
-
             if (!Long.class.equals(query.getResultType())) {
                 root.fetch("brand", JoinType.LEFT);
             }
-
-            return cb.conjunction();  // Không thêm where clause
+            return cb.conjunction();
         };
     }
 
-    // Optional: Nếu cần fetch sizes/images luôn (tránh empty list nếu lazy)
     public static Specification<Product> fetchSizesAndImages() {
         return (root, query, cb) -> {
             if (!Long.class.equals(query.getResultType())) {

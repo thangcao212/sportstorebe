@@ -122,26 +122,31 @@ public class OrderStatsController {
 
     @GetMapping("/top-products")
     public ApiResponse<List<Map<String, Object>>> getTopProducts(
-            @RequestParam(defaultValue = "5") int limit
+            @RequestParam(defaultValue = "5") int limit,
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month
     ) {
+        List<Map<String, Object>> result = orderStatsService.getTopProducts(limit, year, month);
         return ApiResponse.<List<Map<String, Object>>>builder()
                 .status(200)
                 .message("Top sản phẩm bán chạy")
-                .data(orderStatsService.getTopProducts(limit))
+                .data(result)
                 .build();
     }
 
     @GetMapping("/worst-products")
     public ApiResponse<List<Map<String, Object>>> getWorstProducts(
-            @RequestParam(defaultValue = "5") int limit
+            @RequestParam(defaultValue = "5") int limit,
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month
     ) {
+        List<Map<String, Object>> result = orderStatsService.getWorstProducts(limit, year, month);
         return ApiResponse.<List<Map<String, Object>>>builder()
                 .status(200)
                 .message("Top sản phẩm bán kém nhất")
-                .data(orderStatsService.getWorstProducts(limit))
+                .data(result)
                 .build();
     }
-
     // 👈 NEW: Top Products by Profit
     @GetMapping("/top-products-by-profit")
     public ApiResponse<List<Map<String, Object>>> getTopProductsByProfit(

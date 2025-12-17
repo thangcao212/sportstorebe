@@ -40,4 +40,6 @@ public class ProductSearchRequest {
 
     @Positive(message = "Giá nhập tối đa phải lớn hơn 0")
     private Double maxCostPrice; // Giá nhập tối đa
+
+    private Long productId;
 }

@@ -259,18 +259,25 @@ public class ProductServiceImpl implements ProductService {
 
         Specification<Product> spec = Specification.where(null);
 
+        // 👈 THÊM ĐIỀU KIỆN TÌM THEO ID (ƯU TIÊN CAO NHẤT)
+        if (searchRequest.getProductId() != null) {
+            spec = spec.and(ProductSpecification.byProductId(searchRequest.getProductId()));
+            log.info("Searching by exact product ID: {}", searchRequest.getProductId());
+        }
+
         if (StringUtils.hasText(searchRequest.getSearchValue())) {
             spec = spec.and(ProductSpecification.bySearchValue(searchRequest.getSearchValue()));
         }
+
         if (searchRequest.getCategoryId() != null) {
             List<Long> descendantIds = productCategoryRepository.findAllDescendantIds(searchRequest.getCategoryId());
             spec = spec.and(ProductSpecification.byCategoryId(searchRequest.getCategoryId(), descendantIds));
         }
+
         if (searchRequest.getMinPrice() != null || searchRequest.getMaxPrice() != null) {
             spec = spec.and(ProductSpecification.byPriceRange(searchRequest.getMinPrice(), searchRequest.getMaxPrice()));
         }
 
-        // 👈 FIX: THÊM ĐÂY - Apply cost price filter (tương tự price range)
         if (searchRequest.getMinCostPrice() != null || searchRequest.getMaxCostPrice() != null) {
             spec = spec.and(ProductSpecification.byCostPriceRange(searchRequest.getMinCostPrice(), searchRequest.getMaxCostPrice()));
         }
@@ -279,16 +286,19 @@ public class ProductServiceImpl implements ProductService {
             spec = spec.and(ProductSpecification.byStockQuantity(searchRequest.getMinStock(), searchRequest.getMaxStock()));
         }
 
-        // 👈 Added: Lọc theo brand ID
         if (searchRequest.getBrandId() != null) {
             spec = spec.and(ProductSpecification.byBrandId(searchRequest.getBrandId()));
         }
 
-        // 👈 THÊM: Fetch join brand để load eager (đã handle count query trong spec)
+        // Fetch join brand để load eager
         spec = spec.and(ProductSpecification.fetchBrand());
 
-        // Optional: Nếu cần sizes/images không empty trong response
-        // spec = spec.and(ProductSpecification.fetchSizesAndImages());
+        // Nếu tìm theo ID, thường chỉ có 1 kết quả, có thể tối ưu page size
+        if (searchRequest.getProductId() != null) {
+            log.debug("Search by ID detected, adjusting pageable if needed");
+            // Nếu muốn, có thể override pageable để chỉ lấy 1 result
+            // pageable = PageRequest.of(0, 1, pageable.getSort());
+        }
 
         Page<Product> products = productRepository.findAll(spec, pageable);
         log.info("Found {} products on page {} of size {} matching search criteria",

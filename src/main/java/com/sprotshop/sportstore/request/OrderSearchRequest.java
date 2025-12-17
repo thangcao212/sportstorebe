@@ -27,4 +27,5 @@ public class OrderSearchRequest {
     private Long productId;
     private LocalDateTime startDate;
     private LocalDateTime endDate;
+    private Long orderId;
 }
